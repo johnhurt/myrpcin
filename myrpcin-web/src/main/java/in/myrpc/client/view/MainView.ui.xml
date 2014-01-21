@@ -1,0 +1,30 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+        xmlns:g="urn:import:com.google.gwt.user.client.ui"
+		xmlns:o="urn:import:org.orgama.client.widget">
+
+	<ui:style src="res/css/MainView.css"/>
+
+    <g:HTMLPanel>
+		<h1>Welcome!</h1>
+		<p>
+			This is the default application produced by the orgama application
+			archetype.
+		</p>
+
+        <o:WatermarkedTextBox ui:field="txtUsername"
+                value="" placeholder="Username"/>
+        <g:Button ui:field="btnConnect">Connect</g:Button>
+
+        <g:Label ui:field="lblToken"/>
+
+        <o:WatermarkedTextBox ui:field="txtMessage"
+                value="" placeholder="Message"/>
+        <o:WatermarkedTextBox ui:field="txtTarget"
+                value="" placeholder="Target User"/>
+        <g:Button ui:field="btnSend">Send</g:Button>
+
+
+		<g:HTMLPanel styleName="{style.authWidget}" ui:field="pnlAuth"/>
+    </g:HTMLPanel>
+</ui:UiBinder>

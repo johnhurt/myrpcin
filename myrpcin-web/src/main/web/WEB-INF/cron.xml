@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cronentries>
+  <cron>
+    <url>/_ah/warmup</url>
+    <description>Keep atleast one instance alive</description>
+    <schedule>every 1 minutes from 0:00 to 23:59</schedule>
+    <timezone>America/New_York</timezone>
+  </cron>
+</cronentries>

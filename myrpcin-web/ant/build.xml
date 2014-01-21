@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<project name="myrpcin" default="build" basedir=".">
+    
+	<!-- full path of the app-engine java dev-kit -->
+	<property name="app-engine-file" 
+			  value="${com.google.appengine:appengine-java-sdk:zip}"/>
+	
+	<!-- stores the name of the file used to store the last classpath -->
+	<property name="last-classpath-file" value="target/last-classpath.txt"/>
+
+	<!-- stores the path to the generated build config file -->
+	<property name="build-config-file" 
+			  value="target/classes/GeneratedBuildConfig.gwt.xml"/>
+	
+	<!-- 
+	  -	Initialization of the build script.  Sets properties, creates folders
+	  -	... etc 
+	 -->
+	<target name="init">
+		<dirname property="app-engine-repo-dir" 
+				 file="${app-engine-file}"/>
+		<property name="app-engine-parent-dir" 
+				  value="${app-engine-repo-dir}/app-engine"/>
+		<property name="web-inf-lib" value="${war-directory}/WEB-INF/lib"/>
+		<property name="meta-inf-dir" value="${war-directory}/META-INF"/>
+		<property name="web-inf-classes" value="${web-inf-lib}/../classes"/>
+		<mkdir dir="${war-directory}"/>
+		<mkdir dir="${war-directory}/../gwt-unitCache"/>
+		<mkdir dir="${web-inf-lib}"/>
+		<mkdir dir="${meta-inf-dir}"/>
+		<mkdir dir="${web-inf-classes}"/>
+	</target>
+
+	<!-- sets a property to indicate whether the app engine dir exsits -->
+	<target name="app-engine-dir-check" depends="init">
+		<condition property="app-engine-dir-exists">
+			<available file="${app-engine-parent-dir}" type="dir"/>
+		</condition>
+	</target>
+
+	<!-- unzip app engine if it's not there already -->
+	<target name="unzip-app-engine" depends="app-engine-dir-check" 
+			unless="${app-engine-dir-exists}">
+		<unzip src="${app-engine-file}" 
+			   dest="${app-engine-parent-dir}"/>
+	</target>
+    
+	<!-- 
+	  -	Makes sure that the app engine sdk is unzipped and fills a property 
+	  -	with the path to the unzipped sdk
+	 -->
+	<target name="verify-app-engine" depends="unzip-app-engine">
+		<dirset id="app-engine-dir.set" dir="${app-engine-parent-dir}" 
+				includes="*"/>
+
+		<pathconvert refid="app-engine-dir.set" 
+					 pathsep="${line.separator}"
+					 property="app-engine-dir"/>
+
+		<path id="app-engine-classpath">
+			<fileset dir="${app-engine-dir}/lib">
+				<include name="*.jar"/>
+			</fileset>
+			<fileset dir="${app-engine-dir}/lib/tools/jsp">
+				<include name="**/*.jar"/>
+			</fileset>
+			<fileset dir="${app-engine-dir}/lib/agent/">
+				<include name="*.jar"/>
+			</fileset>
+		</path>
+	</target>
+
+	<!-- Set the property is-windows to true if the current os is windows -->
+	<target name="detect-windows" depends="verify-app-engine">
+		<condition property="is-windows">
+			<os family="windows" />
+		</condition>
+	</target>
+
+	<!-- set the app-engine-script property for a windows environment -->
+	<target name="set-app-engine-script-windows" 
+			depends="detect-windows"
+			if="is-windows">
+		<property name="app-engine-script" 
+				  value="${app-engine-dir}/bin/appcfg.cmd"/>
+	</target>
+
+	<!-- set the app-engine-script property for a non-windows environment -->
+	<target name="set-app-engine-script-non-windows" 
+			depends="detect-windows"
+			unless="is-windows">
+		<property name="app-engine-script" 
+				  value="${app-engine-dir}/bin/appcfg.sh"/>
+		<exec executable="chmod">
+			<arg line="755"/>
+			<arg line="${app-engine-script}"/>
+		</exec>
+	</target>
+
+	<!-- 
+	  - Set the app engine script file to be the contents of the property,
+	  - app-engine-script
+	 -->
+	<target name="set-app-engine-script"
+			depends="set-app-engine-script-windows,set-app-engine-script-non-windows">
+	</target>
+
+	<!-- 
+	  - checks to see if the last-classpath.txt file exists.  If it does, then
+	  - the result is stored in the property called last-classpath-file-exists
+	 -->
+	<target name="check-last-classpath-file-exists">
+		<condition property="last-classpath-file-exists">
+			<available file="${last-classpath-file}" type="file"/>
+		</condition>
+	</target>
+
+	<!-- 
+	  - logical short circuit that sets the classpath-changed property to true
+	  - if the last-classpath file does not exist.  otherwise, nothing happens
+	 -->
+	<target name="classpath-changed-if-no-last-file"
+			depends="check-last-classpath-file-exists"
+			unless="last-classpath-file-exists">
+		<property name="classpath-changed" value="true"/>
+	</target>
+
+	<!-- 
+	  - Checks to see if the classpath has changed from the one stored in the
+	  - last-classpath.txt file.  The result is stored in the property called
+	  - classpath-changed
+	 -->
+	<target name="check-classpath-changed"
+			depends="classpath-changed-if-no-last-file"
+			if="last-classpath-file-exists">
+		<loadfile srcfile="${last-classpath-file}" property="last-classpath"/>
+		<condition property="classpath-changed">
+			<equals arg1="${project.classpath}" arg2="${last-classpath}"
+					casesensitive="false" trim="true"/>
+		</condition>
+	</target>
+
+	<!--
+	  - Copies the jars listed in the classpath to war's lib directory if the
+	  - classpath has changed since the last time this copy was done
+	 -->
+	<target name="copy-classpath-jars" 
+			depends="check-classpath-changed"
+			if="classpath-changed">
+		
+		<copy todir="${web-inf-lib}" flatten="true">
+			<path>
+				<pathelement path="${project.classpath}"/>
+			</path>
+		</copy>
+
+		<echo file="${last-classpath-file}" message="${project.classpath}"/>
+	</target>
+
+	<!-- copy the web and resources folders into the war directory -->
+	<target name="copy-war-dependencies" 
+			depends="verify-app-engine,copy-classpath-jars">
+		<copy todir="${war-directory}" overwrite="true">
+			<fileset dir="src/main/web">
+				<include name="**/*.*"/>
+			</fileset>
+			<fileset dir="src/main/resources">
+				<include name="**/*.*"/>
+			</fileset>
+		</copy>
+		<copy todir="${web-inf-classes}" overwrite="true">
+			<fileset dir="target/classes">
+				<include name="**/*.*"/>
+			</fileset>
+		</copy>
+	</target>
+
+	<!-- Full compile for automated pushing to app engine -->
+	<target name="gwtc-full" depends="verify-app-engine" if="gwt-full-compile">
+
+		<echo file="${build-config-file}" 
+			  message="&lt;module&gt;${full-build-config-module}&lt;/module&gt;"/>
+
+		<java failonerror="true" fork="true" 
+			  classname="com.google.gwt.dev.Compiler">
+			<classpath>
+				<pathelement location="src/main/java"/>
+				<pathelement path="${project.classpath}"/>
+			</classpath>
+			<!-- add jvmarg -Xss16M if you see a StackOverflowError -->
+			<jvmarg value="-Xmx1024M"/>
+			<!-- Additional arguments like -style PRETTY or -logLevel DEBUG -->
+			<arg value="-XsoycDetailed"/>
+			<arg value="-compileReport"/>
+			<arg value="-extra"/>
+			<arg value="target/extras"/>
+			<arg value="-strict"/>
+			<arg value="-style"/>
+			<arg value="OBF"/>
+			<arg value="-war"/>
+			<arg value="${war-directory}"/>
+			<arg value="${app-module}"/>
+		</java>
+
+	</target>
+
+	<!-- Minimal compile for everyday local testing -->
+	<target name="gwtc-min" depends="verify-app-engine" 
+			unless="gwt-full-compile">
+
+
+		<echo file="${build-config-file}" 
+			  message="&lt;module&gt;${min-build-config-module}&lt;/module&gt;"/>
+
+		<java failonerror="true" fork="true" 
+			  classname="com.google.gwt.dev.Compiler">
+			<classpath>
+				<pathelement location="src/main/java"/>
+				<pathelement path="${project.classpath}"/>
+			</classpath>
+			<!-- add jvmarg -Xss16M if you see a StackOverflowError -->
+			<jvmarg value="-Xmx512M"/>
+			<!-- Additional arguments like -style PRETTY or -logLevel DEBUG -->
+			<arg value="-XdisableCastChecking" />
+			<arg value="-draftCompile" />
+			<arg value="-strict"/>
+			<arg value="-style"/>
+			<arg value="PRETTY"/>
+			<arg value="-war"/>
+			<arg value="${war-directory}"/>
+			<arg value="${app-module}"/>
+		</java>
+
+	</target>
+	
+	<!-- 
+	  - This is called to generate the class and interface that bind the
+	  - presenter and the 
+	-->
+	<target name="generate-presenter-structure">
+		<java failonerror="true" fork="true" 
+				classname="org.orgama.structure.App">
+			<classpath>
+				<pathelement path="${project.classpath}"/>
+			</classpath>
+			<arg line="target/classes"/>
+		</java>
+	</target>
+	
+	<!-- 
+	  - Target for compiling the gt portion of the project (either min or full) 
+	  - and then copy this projects classes to the war-dir's classes dir
+	 -->
+	<target name="gwtc" 
+			depends="generate-presenter-structure,gwtc-min,gwtc-full" 
+			description="GWT compile to JavaScript">
+	</target>
+
+	<!-- update the debug argument if the jdpa address is there -->
+	<target name="set-debug-arg" if="jpda.address">
+		<property name="debug-arg" 
+				  value="-Xrunjdwp:transport=dt_socket,server=n,address=127.0.0.1:${jpda.address}"/>
+		<echo>${debug-arg}</echo>
+	</target>
+
+	<!-- Start dev mode in normal (non-debug) mode -->
+	<target name="dev-mode-normal" 
+			depends="copy-war-dependencies,set-debug-arg"
+			unless="jpda.address">
+		
+		<java failonerror="true" fork="true" 
+			  classname="com.google.gwt.dev.DevMode">
+			<classpath>
+				<pathelement location="src/main/java"/>
+				<pathelement path="${project.classpath}"/>
+				<path refid="app-engine-classpath"/>
+			</classpath>
+			<jvmarg value="-Xmx1024M"/>
+			<jvmarg value="-javaagent:${app-engine-dir}/lib/agent/appengine-agent.jar"/>
+			<arg value="-logLevel"/>
+			<arg value="TRACE"/>
+			<arg value="-startupUrl"/>
+			<arg value="index.jsp"/>
+			<arg value="-server"/>
+			<arg value="com.google.appengine.tools.development.gwt.AppEngineLauncher"/>
+			<arg value="-war"/>
+			<arg value="${war-directory}"/>
+			<arg value="${app-module}"/>
+		</java>
+	</target>
+
+	<!-- Start dev mode in debug mode -->
+	<target name="dev-mode-debug" 
+			depends="copy-war-dependencies,set-debug-arg"
+			if="jpda.address">
+		
+		<java failonerror="true" fork="true" 
+			  classname="com.google.gwt.dev.DevMode">
+			<classpath>
+				<pathelement location="src/main/java"/>
+				<pathelement path="${project.classpath}"/>
+				<path refid="app-engine-classpath"/>
+			</classpath>
+			<jvmarg value="-Xmx1024M"/>
+			<jvmarg value="-javaagent:${app-engine-dir}/lib/agent/appengine-agent.jar"/>
+			<jvmarg value="-Xdebug"/>
+			<jvmarg value="${debug-arg}"/>
+			<arg value="-logLevel"/>
+			<arg value="TRACE"/>
+			<arg value="-startupUrl"/>
+			<arg value="index.jsp"/>
+			<arg value="-server"/>
+			<arg value="com.google.appengine.tools.development.gwt.AppEngineLauncher"/>
+			<arg value="-war"/>
+			<arg value="${war-directory}"/>
+			<arg value="${app-module}"/>
+		</java>
+	</target>
+
+	<!-- Start Dev Mode -->
+	<target name="dev-mode" 
+			depends="dev-mode-debug,dev-mode-normal" 
+			description="Run development mode">
+	</target>
+
+	<!-- Defines property if the facebook app secret file exists -->
+	<target name="verify-facebook-secret-file" if="facebook-app-secret-file">
+		<condition property="facebook-secret-file-exists">
+			<available file="${facebook-app-secret-file}" type="file"/>
+		</condition>
+	</target>
+	
+	<!-- Copy Facebook secret file if it exists to the META-INF folder -->
+	<target name="copy-facebook-secret-file" 
+			depends="verify-facebook-secret-file"
+			if="facebook-secret-file-exists">
+		<copy file="${facebook-app-secret-file}" 
+				  tofile="${meta-inf-dir}/facebook-app-secret-id.txt"/>
+	</target>
+
+	<!-- 
+	  - do the app engine deployment using the password stored in the password
+	  - file refered to by the password-file property.  This deployment method 
+	  - will be used if the password-file property exists regardless of whether
+	  - the password property exists
+	 -->
+	<target name="deploy-to-app-engine"
+			depends="set-app-engine-script,copy-war-dependencies,copy-facebook-secret-file">
+		
+		<exec executable="${app-engine-script}" 
+			  input="${password-file}">
+			<arg line="--enable_jar_splitting"/>
+			<arg line="--email=${email-address}"/>
+			<arg line="--passin"/>
+			<arg line="update"/>
+			<arg path="${war-directory}"/>
+		</exec>
+
+	</target>
+
+</project>

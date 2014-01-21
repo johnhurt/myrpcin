@@ -1,0 +1,34 @@
+<!DOCTYPE module PUBLIC "//gwt-module/"
+        "http://google-web-toolkit.googlecode.com/svn/tags/1.6.2/distro-source/core/src/gwt-module.dtd">
+<module>
+
+    <!-- Orgama -->
+    <inherits name="org.orgama.Orgama" />
+
+    <inherits name="com.google.gwt.appengine.channel.Channel"/>
+
+    <!-- Style -->
+    <inherits name='com.google.gwt.user.theme.standard.Standard'/>
+
+    <!-- Client side code -->
+    <source path="client" />
+    <source path="shared" />
+
+    <!-- Specify the app entry point class. -->
+    <entry-point class="in.myrpc.client.AppMain"/>
+
+    <!-- Set the Ginjector -->
+    <set-configuration-property name="gin.ginjector"
+                                value="in.myrpc.client.config.AppGinjector" />
+
+    <!--
+      - Inherit the file that controls build options.  This file will be
+      - generated at compile time base on the configurations passed to Maven
+      - when mvn install is called.  If gwt-full-compile is set then
+      - the FullBuildConfig.gwt.xml file will be used.  If the gwt-full-compile
+      - property is not set, then the MinBuildConfig.gwt.xml file will be used
+    -->
+    <inherits name="GeneratedBuildConfig"/>
+
+</module>
+

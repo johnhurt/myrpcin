@@ -1,0 +1,7 @@
+.authWidget {
+	border: 1px solid DarkGray; 
+	position: absolute;
+	right: 0px;
+	top: 0px;
+	margin: 5px;
+}

@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+		 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.rookandpawn</groupId>
+	<artifactId>myrpcin</artifactId>
+	<version>1.0-SNAPSHOT</version>
+	<name>myrpcin</name>
+	<description></description>
+	<url></url>
+
+	<properties>
+
+		<!-- Version of Orgama framework to use -->
+		<orgama-version>1.0-SNAPSHOT</orgama-version>
+
+		<!-- Directory where the orgama app will be built -->
+		<war-directory>target/myrpcin-1.0-SNAPSHOT</war-directory>
+
+		<!--
+		 - This is the fully qualified path and class name of this orgama
+		 - application's gwt module file.  You
+		-->
+		<app-module>in.myrpc.App</app-module>
+
+		<!--
+		  - This property is used as the contents of the generated GWT module
+		  - for configuring minimum builds.
+		-->
+		<min-build-config-module><![CDATA[
+
+			<!-- Log Level (TRACE is the default) -->
+			<set-property name="log_level" value="TRACE"/>
+
+			<!-- Limit to Firefox comilation -->
+			<set-property name="user.agent" value="gecko1_8"/>
+
+			<!-- Limit to Chrome/Safari comilation -->
+			<!-- <set-property name="user.agent" value="webkit"/> -->
+
+			<!-- Languages -->
+			<!-- <extend-property name="locale" values="pi"/> -->
+
+		]]></min-build-config-module>
+
+		<!--
+		  - This property is used as the contents of the generated GWT module
+		  - for configuring minimum builds.
+		-->
+		<full-build-config-module><![CDATA[
+
+			<!-- Disable Client-Side Logging -->
+			<set-property name="log_level" value="OFF"/>
+
+			<!-- No browser/user-agent restrictions -->
+
+			<!-- Languages -->
+			<!-- <extend-property name="locale" values="pi"/> -->
+
+		]]></full-build-config-module>
+
+		<!-- Email address for Google AppEngine account (for deployment) -->
+		<email-address>teamcity@rookandpawn.com</email-address>
+
+		<!-- file containing the the app secret id for facebook -->
+		<facebook-app-secret-file>
+			facebook-app-secret.txt
+		</facebook-app-secret-file>
+
+		<!--
+		 - file that stores the password for the Google AppEngine account.
+		 - If this property is defined, it overrides the plain password
+		 - property.
+		-->
+		<password-file>/Users/kguthrie/Projects/Scratch/builder.txt</password-file>
+
+	</properties>
+
+	<dependencies>
+
+		<dependency>
+			<groupId>org.orgama</groupId>
+			<artifactId>orgama</artifactId>
+			<version>${orgama-version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.orgama</groupId>
+			<artifactId>orgama-test</artifactId>
+			<version>${orgama-version}</version>
+			<scope>test</scope>
+		</dependency>
+	 <dependency>
+	  <groupId>com.google.gwt.appengine</groupId>
+	  <artifactId>gwt-gae-channel</artifactId>
+	  <version>1.0-SNAPSHOT</version>
+	 </dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+
+			<!-- Configure how resources are handled -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<version>2.6</version>
+				<configuration>
+					<encoding>UTF-8</encoding>
+					<nonFilteredFileExtensions>
+						<nonFilteredFileExtension>jpg</nonFilteredFileExtension>
+						<nonFilteredFileExtension>png</nonFilteredFileExtension>
+						<nonFilteredFileExtension>ico</nonFilteredFileExtension>
+						<nonFilteredFileExtension>pdf</nonFilteredFileExtension>
+					</nonFilteredFileExtensions>
+				</configuration>
+			</plugin>
+
+			<!-- Compiler Configureations Source and Target v1.6 in UTF-8 -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.0</version>
+				<configuration>
+					<source>1.6</source>
+					<target>1.6</target>
+					<encoding>UTF-8</encoding>
+				</configuration>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<version>1.7</version>
+				<executions>
+					<execution>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<id>gwt-compile</id>
+						<phase>install</phase>
+						<configuration>
+							<target>
+								<property name="project.classpath"
+										  refid="maven.compile.classpath"/>
+								<echo message="Compiling GWT"/>
+								<ant antfile="ant/build.xml" target="gwtc"/>
+							</target>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
+		</plugins>
+	</build>
+
+	<profiles>
+
+		<!-- Profile used to run dev mode -->
+		<profile>
+			<id>ant-devmode</id>
+
+			<build>
+				<defaultGoal>antrun:run</defaultGoal>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-antrun-plugin</artifactId>
+						<version>1.7</version>
+						<configuration>
+							<target>
+								<property name="project.classpath"
+										  refid="maven.compile.classpath"/>
+								<echo message="Starting DevMode"/>
+								<ant antfile="ant/build.xml">
+									<target name="dev-mode" />
+								</ant>
+							</target>
+						</configuration>
+
+						<goals>
+							<goal>run</goal>
+						</goals>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+
+		<!-- Profile used for app engine deployment -->
+		<profile>
+			<id>deploy-to-app-engine</id>
+
+			<build>
+				<defaultGoal>antrun:run</defaultGoal>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-antrun-plugin</artifactId>
+						<version>1.7</version>
+						<configuration>
+							<target>
+								<echo message="Deploying To AppEngine"/>
+								<property name="project.classpath"
+										  refid="maven.compile.classpath"/>
+								<property name="gwt-full-compile" value="true"/>
+								<ant antfile="ant/build.xml">
+									<target name="deploy-to-app-engine" />
+								</ant>
+							</target>
+						</configuration>
+
+						<goals>
+							<goal>run</goal>
+						</goals>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+</project>
