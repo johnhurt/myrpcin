@@ -11,20 +11,10 @@
 			This is the default application produced by the orgama application
 			archetype.
 		</p>
+        <g:HTMLPanel styleName="{style.authWidget}" ui:field="pnlAuth"/>
 
-        <o:WatermarkedTextBox ui:field="txtUsername"
-                value="" placeholder="Username"/>
-        <g:Button ui:field="btnConnect">Connect</g:Button>
+        <g:Label ui:field="lblStatus"/>
 
-        <g:Label ui:field="lblToken"/>
-
-        <o:WatermarkedTextBox ui:field="txtMessage"
-                value="" placeholder="Message"/>
-        <o:WatermarkedTextBox ui:field="txtTarget"
-                value="" placeholder="Target User"/>
-        <g:Button ui:field="btnSend">Send</g:Button>
-
-
-		<g:HTMLPanel styleName="{style.authWidget}" ui:field="pnlAuth"/>
+        <g:HTMLPanel ui:field="pnlAccounts"/>
     </g:HTMLPanel>
 </ui:UiBinder>

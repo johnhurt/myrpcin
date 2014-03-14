@@ -4,18 +4,16 @@
  * and open the template in the editor.
  */
 
-package in.myrpc.server.service;
-
-import in.myrpc.shared.model.Device;
+package in.myrpc.server;
 
 /**
+ * Servlet for handing the connection of an endpoint to
  *
  * @author kguthrie
  */
-public interface DeviceService {
+public class EndpointConnectionServlet {
 
-    void save(Device device);
-
-    Device get(String username);
+    write
+this;
 
 }

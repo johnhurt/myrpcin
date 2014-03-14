@@ -92,6 +92,17 @@
 			<activatedProfile>deploy-to-app-engine</activatedProfile>
 		</activatedProfiles>
 	</action>
+	<action>
+            <actionName>CUSTOM-Full Compile</actionName>
+            <displayName>Full Compile</displayName>
+            <goals>
+                <goal>clean</goal>
+                <goal>install</goal>
+            </goals>
+            <properties>
+                <gwt-full-compile>true</gwt-full-compile>
+            </properties>
+        </action>
 
 
 </actions>
