@@ -6,6 +6,8 @@
 
 package in.myrpc.server.service;
 
+import in.myrpc.shared.model.Endpoint;
+
 /**
  * methods for interacting with endpoints
  *
@@ -14,5 +16,7 @@ package in.myrpc.server.service;
 public interface EndpointService {
 
     String provisionEndpoint(String endpointName, String centerpointLocator);
+
+    Endpoint getByLocator(String locator);
 
 }

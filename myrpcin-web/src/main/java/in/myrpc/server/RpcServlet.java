@@ -7,8 +7,16 @@
 package in.myrpc.server;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.appengine.api.channel.ChannelMessage;
+import com.google.appengine.api.channel.ChannelServiceFactory;
 import com.google.inject.Inject;
-import in.myrpc.model.Rpc;
+import in.myrpc.model.RpcRelay;
+import in.myrpc.model.RpcRequest;
+import in.myrpc.model.RpcResponse;
+import in.myrpc.server.model.PooledChannel;
+import in.myrpc.server.service.EndpointService;
+import in.myrpc.server.service.PooledChannelService;
+import in.myrpc.shared.model.Endpoint;
 import java.io.IOException;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
@@ -23,11 +31,16 @@ import javax.ws.rs.core.MediaType;
 @Path("/pc")
 public class RpcServlet {
 
+    private final EndpointService endpointService;
+    private final PooledChannelService channelService;
     private final ObjectMapper mapper;
 
     @Inject
-    public RpcServlet() {
+    public RpcServlet(EndpointService endpointService,
+            PooledChannelService channelService) {
         this.mapper = new ObjectMapper();
+        this.endpointService = endpointService;
+        this.channelService = channelService;
     }
 
     @POST
@@ -35,9 +48,37 @@ public class RpcServlet {
     @Produces(MediaType.TEXT_PLAIN)
     public String rpc(String postContent) throws IOException {
 
-        Rpc call = mapper.readValue(postContent, Rpc.class);
+        RpcRequest call = mapper.readValue(postContent, RpcRequest.class);
+        RpcResponse result = null;
 
-        return "boyee";
+        String sourceLocator = call.getSourceLocator();
+        String targetLocator = call.getTargetLocator();
+
+        Endpoint source = endpointService.getByLocator(sourceLocator);
+        Endpoint target = endpointService.getByLocator(targetLocator);
+
+        if (source == null || target == null
+                || !source.getCenterpointRef().equivalent(
+                        target.getCenterpointRef())) {
+            return null;
+        }
+
+        PooledChannel channel = channelService.getByEndoint(sourceLocator);
+
+        if (channel == null) {
+            return null;
+        }
+
+        RpcRelay rpc = new RpcRelay(call.getMethod(), call.getArguments(),
+                sourceLocator, call.getRequestId());
+
+        ChannelServiceFactory.getChannelService().sendMessage(
+                new ChannelMessage(Long.toHexString(channel.getId()),
+                        mapper.writeValueAsString(rpc)));
+
+        result = new RpcResponse(rpc.getResponseId());
+
+        return mapper.writeValueAsString(result);
     }
 
 }

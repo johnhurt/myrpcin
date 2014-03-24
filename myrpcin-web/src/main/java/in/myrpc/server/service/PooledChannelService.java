@@ -15,15 +15,15 @@ import in.myrpc.server.model.PooledChannel;
  */
 public interface PooledChannelService {
 
-    PooledChannel getNewForEndpointId(String endpointId);
+    PooledChannel getNewForEndpoint(String endpointLocator);
 
     PooledChannel get(String id);
 
-    PooledChannel getByEndointId(String endpointId);
+    PooledChannel getByEndoint(String endpointLocator);
 
     void releaseById(String id);
 
     void deleteById(String id);
 
-    void sendMessage(String endpointId, String message);
+    void sendMessage(String endpointLocator, String message);
 }

@@ -3,6 +3,7 @@ package in.myrpc.server.config;
 import com.google.inject.Singleton;
 import in.myrpc.server.ChannelPresenceServlet;
 import in.myrpc.server.EmailVerificationServlet;
+import in.myrpc.server.EndpointConnectionServlet;
 import in.myrpc.server.EndpointProvisioningServlet;
 import in.myrpc.server.RpcServlet;
 import in.myrpc.server.handler.GetUserInfoHandler;
@@ -104,6 +105,9 @@ public class AppServerConfig extends BaseExtensionModule {
                 .in(Singleton.class);
 
         bind(EndpointProvisioningServlet.class)
+                .in(Singleton.class);
+
+        bind(EndpointConnectionServlet.class)
                 .in(Singleton.class);
 
         bind(RpcServlet.class)

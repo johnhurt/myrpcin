@@ -9,6 +9,7 @@ package in.myrpc.server;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
 import in.myrpc.model.ProvisionRequest;
+import in.myrpc.model.ProvisionResponse;
 import in.myrpc.server.service.EndpointService;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
@@ -44,7 +45,7 @@ public class EndpointProvisioningServlet {
                 request.getEndpointName(),
                 request.getCenterpointLocator());
 
-        return result != null ? result : "";
+        return mapper.writeValueAsString(new ProvisionResponse(result));
     }
 
 }

@@ -80,4 +80,16 @@ public class EndpointServiceImpl implements EndpointService {
         }
 
     }
+
+    /**
+     * Get the endpoint for the given locator
+     *
+     * @param locatorString
+     * @return
+     */
+    @Override
+    public Endpoint getByLocator(String locatorString) {
+        Locator<Endpoint> locator = locatorService.openLocator(locatorString);
+        return Ofy.load().key(locator.getKey()).now();
+    }
 }

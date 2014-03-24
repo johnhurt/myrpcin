@@ -28,7 +28,7 @@ public class PooledChannelServiceImpl implements PooledChannelService {
     }
 
     @Override
-    public PooledChannel getNewForEndpointId(final String endpointId) {
+    public PooledChannel getNewForEndpoint(final String endpointLocator) {
 
         PooledChannel result = null;
         long now = System.currentTimeMillis();
@@ -52,15 +52,15 @@ public class PooledChannelServiceImpl implements PooledChannelService {
                     PooledChannel result
                             = Ofy.load()
                             .key(channelKey)
-                            .get();
+                            .now();
 
                     // if the channel's endpoint has been set, someone else
                     // took this channel before we could
-                    if (result.getEndpointId() != null) {
+                    if (result.getEndpointLocator() != null) {
                         return null;
                     }
 
-                    result.setEndpointId(endpointId);
+                    result.setEndpointLocator(endpointLocator);
 
                     Ofy.save().entity(result).now();
 
@@ -78,13 +78,13 @@ public class PooledChannelServiceImpl implements PooledChannelService {
         // save a represntation of if in the pool
         if (result == null) {
             result = new PooledChannel();
-            result.setEndpointId("somethingNotNull");
+            result.setEndpointLocator("somethingNotNull");
             Ofy.save().entity(result).now(); // To get a unique id
             String token = ChannelServiceFactory.getChannelService()
                     .createChannel(Long.toHexString(result.getId()));
             long expireDate = System.currentTimeMillis()
                     + (long) (23.5 * 60L * 60L * 1000L);
-            result.setEndpointId(endpointId);
+            result.setEndpointLocator(endpointLocator);
             result.setExpirationDate(expireDate);
             result.setToken(token);
 
@@ -99,14 +99,14 @@ public class PooledChannelServiceImpl implements PooledChannelService {
         return Ofy.load()
                 .type(PooledChannel.class)
                 .id(Long.parseLong(id, 16))
-                .get();
+                .now();
     }
 
     @Override
-    public PooledChannel getByEndointId(String endpointId) {
+    public PooledChannel getByEndoint(String endpointId) {
         Iterable<PooledChannel> resultIterable = Ofy.load()
                 .type(PooledChannel.class)
-                .filter("endpointId", endpointId).iterable();
+                .filter("endpointLocator", endpointId).iterable();
 
         // Start iterating through the result of the query, and return the first
         // result
@@ -134,7 +134,7 @@ public class PooledChannelServiceImpl implements PooledChannelService {
                     deleteById(id);
                 }
                 else {
-                    channel.setEndpointId(null);
+                    channel.setEndpointLocator(null);
                     Ofy.save().entity(channel);
                 }
             }
@@ -149,7 +149,7 @@ public class PooledChannelServiceImpl implements PooledChannelService {
 
     @Override
     public void sendMessage(String endpointId, String message) {
-        PooledChannel channel = getByEndointId(endpointId);
+        PooledChannel channel = getByEndoint(endpointId);
 
         ChannelMessage msg = new ChannelMessage(
                 Long.toHexString(channel.getId()), message);

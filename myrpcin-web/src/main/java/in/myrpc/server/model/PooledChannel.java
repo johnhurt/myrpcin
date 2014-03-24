@@ -24,7 +24,7 @@ public final class PooledChannel {
     private String token;
 
     @Index
-    private String endpointId;
+    private String endpointLocator;
 
     @Index
     private long expirationDate;
@@ -47,17 +47,17 @@ public final class PooledChannel {
     }
 
     /**
-     * @return the endpointId
+     * @return the endpointLocator
      */
-    public String getEndpointId() {
-        return endpointId;
+    public String getEndpointLocator() {
+        return endpointLocator;
     }
 
     /**
-     * @param endpointId the endpointId to set
+     * @param endpointLocator the endpointLocator to set
      */
-    public void setEndpointId(String endpointId) {
-        this.endpointId = endpointId;
+    public void setEndpointLocator(String endpointLocator) {
+        this.endpointLocator = endpointLocator;
     }
 
     /**
