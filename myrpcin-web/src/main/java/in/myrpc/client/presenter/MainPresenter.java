@@ -11,7 +11,6 @@ import in.myrpc.shared.model.Account;
 import in.myrpc.shared.model.Centerpoint;
 import in.myrpc.shared.model.Role;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 import org.orgama.client.Dispatch;
@@ -134,7 +133,7 @@ public class MainPresenter extends OrgamaPresenter<MainPresenter.Display> {
      * @param centerpoints
      */
     private void handleAccountDisplay(Display view,
-            EnumMap<Role, ArrayList<Account>> accounts,
+            HashMap<Role, ArrayList<Account>> accounts,
             HashMap<String, Centerpoint> centerpoints) {
 
         assert (accounts != null);
@@ -163,8 +162,8 @@ public class MainPresenter extends OrgamaPresenter<MainPresenter.Display> {
             Role.owner
         };
 
-        EnumMap<Role, String> roleNameMap
-                = new EnumMap<Role, String>(Role.class);
+        HashMap<Role, String> roleNameMap
+                = new HashMap<Role, String>();
 
         roleNameMap.put(Role.owner, "Owner");
 

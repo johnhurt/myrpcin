@@ -36,7 +36,7 @@ public class PooledChannelServiceImpl implements PooledChannelService {
         // Get the list of keys for potential channels
         Iterable<Key<PooledChannel>> unusedChannels = Ofy.load()
                 .type(PooledChannel.class)
-                .filter("endpointId", null)
+                .filter("endpointLocator", null)
                 .filter("expirationDate >", now)
                 .keys()
                 .iterable();
@@ -83,7 +83,7 @@ public class PooledChannelServiceImpl implements PooledChannelService {
             String token = ChannelServiceFactory.getChannelService()
                     .createChannel(Long.toHexString(result.getId()));
             long expireDate = System.currentTimeMillis()
-                    + (long) (23.5 * 60L * 60L * 1000L);
+                    + (long) (1.99 * 60L * 60L * 1000L);
             result.setEndpointLocator(endpointLocator);
             result.setExpirationDate(expireDate);
             result.setToken(token);
@@ -111,6 +111,13 @@ public class PooledChannelServiceImpl implements PooledChannelService {
         // Start iterating through the result of the query, and return the first
         // result
         for (PooledChannel result : resultIterable) {
+
+            // If the resulting entity is expired, then delete it and return
+            // null
+            if (result.getExpirationDate() < System.currentTimeMillis()) {
+                Ofy.delete().entity(result); //Async (yay)
+                return null;
+            }
             return result;
         }
 

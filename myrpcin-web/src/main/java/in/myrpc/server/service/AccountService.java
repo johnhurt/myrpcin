@@ -10,7 +10,7 @@ import in.myrpc.shared.model.Account;
 import in.myrpc.shared.model.Role;
 import in.myrpc.shared.model.User;
 import java.util.ArrayList;
-import java.util.EnumMap;
+import java.util.HashMap;
 
 /**
  * Methods for interacting with the account system
@@ -21,6 +21,6 @@ public interface AccountService {
 
     Account createDefaultAccountForUser(User user);
 
-    EnumMap<Role, ArrayList<Account>> getAccountsForUser(User user);
+    HashMap<Role, ArrayList<Account>> getAccountsForUser(User user);
 
 }

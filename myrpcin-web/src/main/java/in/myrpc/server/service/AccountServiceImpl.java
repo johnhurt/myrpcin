@@ -12,7 +12,7 @@ import in.myrpc.shared.model.Permission;
 import in.myrpc.shared.model.Role;
 import in.myrpc.shared.model.User;
 import java.util.ArrayList;
-import java.util.EnumMap;
+import java.util.HashMap;
 import org.orgama.server.Ofy;
 import org.orgama.shared.auth.model.AuthUser;
 
@@ -54,11 +54,11 @@ public class AccountServiceImpl implements AccountService {
     }
 
     @Override
-    public EnumMap<Role, ArrayList<Account>> getAccountsForUser(
+    public HashMap<Role, ArrayList<Account>> getAccountsForUser(
             User user) {
 
-        EnumMap<Role, ArrayList<Account>> result
-                = new EnumMap<Role, ArrayList<Account>>(Role.class);
+        HashMap<Role, ArrayList<Account>> result
+                = new HashMap<Role, ArrayList<Account>>();
 
         for (Permission permission : permissionService.getForUser(user)) {
             ArrayList<Account> accounts = result.get(

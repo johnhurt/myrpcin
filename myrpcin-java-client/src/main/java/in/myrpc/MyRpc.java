@@ -9,18 +9,29 @@ import in.myrpc.model.ProvisionRequest;
 import in.myrpc.model.ProvisionResponse;
 import in.myrpc.model.RpcRelay;
 import in.myrpc.model.RpcRequest;
-import in.myrpc.model.RpcResponse;
+import in.myrpc.model.RpcReturn;
+import in.myrpc.model.RpcReturnRelay;
 import in.myrpc.reflect.RpcMethodReflection;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import org.json.JSONException;
 
 /**
@@ -30,19 +41,71 @@ import org.json.JSONException;
  */
 public class MyRpc implements ChannelClient.ChannelListener {
 
+    private static final String localApp = "http://localhost:8888";
+    private static final String productionApp = "https://www.myrpc.in";
+
     private final ObjectMapper mapper;
     private final RpcMethodReflection interop;
     private String endpointLocator;
     private final AtomicInteger lastRequestId;
+    private final String domain;
 
     private final Map<String, RpcCallback> callbacks;
+    private ChannelClient channelCleint;
 
-    public MyRpc(String endpointLocator, Object rpcMethodContainer) {
+    public MyRpc(String endpointLocator, Object rpcMethodContainer,
+            boolean local) {
         lastRequestId = new AtomicInteger(0);
         mapper = new ObjectMapper();
         this.endpointLocator = endpointLocator;
         this.interop = new RpcMethodReflection(rpcMethodContainer);
         this.callbacks = Maps.newHashMap();
+        domain = local ? localApp : productionApp;
+
+        ignoreUntrustedCertificateErrors();
+
+        // Add a shutdown callback so that channels are closed when the jvm
+        // exists
+        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+            public void run() {
+                close();
+            }
+        }));
+    }
+
+    /**
+     * Ignore the untrusted certificate errors. This should go away when we get
+     * a big boy ssl cert
+     */
+    private void ignoreUntrustedCertificateErrors() {
+        TrustManager[] trustAllCerts = new TrustManager[]{
+            new X509TrustManager() {
+                public X509Certificate[] getAcceptedIssuers() {
+                    return null;
+                }
+
+                public void checkClientTrusted(X509Certificate[] certs,
+                        String authType) {
+                }
+
+                public void checkServerTrusted(X509Certificate[] certs,
+                        String authType) {
+                }
+            }
+        };
+
+        try {
+            SSLContext sslContext = SSLContext.getInstance("SSL");
+            sslContext.init(null, trustAllCerts, new SecureRandom());
+            HttpsURLConnection.setDefaultSSLSocketFactory(
+                    sslContext.getSocketFactory());
+        }
+        catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+        catch (KeyManagementException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -65,6 +128,7 @@ public class MyRpc implements ChannelClient.ChannelListener {
 
     /**
      * Connect to the server as an endpoint
+     *
      * @throws java.io.IOException
      */
     public void connect() throws IOException {
@@ -78,16 +142,16 @@ public class MyRpc implements ChannelClient.ChannelListener {
         URI uri = null;
 
         try {
-            uri = new URI("http://localhost:8888");
+            uri = new URI(domain);
         }
         catch (URISyntaxException e) {
             throw new IOException(e);
         }
 
-        ChannelClient cc = ChannelClient.createChannel(uri, token, this);
+        channelCleint = ChannelClient.createChannel(uri, token, this);
 
         try {
-            cc.open();
+            channelCleint.open();
         }
         catch (ChannelClient.ChannelException e) {
             throw new IOException(e);
@@ -98,12 +162,29 @@ public class MyRpc implements ChannelClient.ChannelListener {
     }
 
     /**
+     * Close the current channel connection
+     */
+    public void close() {
+        if (channelCleint == null) {
+            return;
+        }
+
+        try {
+            channelCleint.close();
+        }
+        catch (ChannelClient.ChannelException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    /**
      * call the given method on the given endpoint target with the given
      * arguments
      *
      * @param targetEndpointLocator
      * @param method
      * @param arguments
+     * @param callback
      * @throws java.io.IOException
      */
     public void call(String targetEndpointLocator, String method,
@@ -116,13 +197,30 @@ public class MyRpc implements ChannelClient.ChannelListener {
                 endpointLocator, targetEndpointLocator,
                 method, arguments);
 
-        String rpcResponseStr = post("/r/pc", mapper.writeValueAsString(rpc));
-        RpcResponse rpcResponse = mapper.readValue(rpcResponseStr,
-                RpcResponse.class);
-
         if (callback != null) {
             callbacks.put(requestId, callback);
         }
+
+        post("/r/pc", mapper.writeValueAsString(rpc));
+
+    }
+
+    /**
+     * Send the response to an rpc call back to the original sender with the
+     * requestId, so that they know what request it corresponds to.
+     *
+     * @param originalSourceLocator
+     * @param value
+     * @param requestId
+     */
+    protected void returnCall(String originalSourceLocator, String value,
+            String requestId) throws IOException {
+
+        RpcReturn result = new RpcReturn(requestId, value,
+                originalSourceLocator, endpointLocator);
+        String rpcReturnString = mapper.writeValueAsString(result);
+
+        post("/r/pc/return", rpcReturnString);
     }
 
     /**
@@ -136,12 +234,12 @@ public class MyRpc implements ChannelClient.ChannelListener {
         assert (uri != null);
         assert (content != null);
 
-        if (uri.startsWith("/")) {
-            uri = uri.substring(1);
+        if (!uri.startsWith("/")) {
+            uri = "/" + uri;
         }
 
         byte[] contentBytes = content.getBytes("UTF-8");
-        URL url = new URL("http://localhost:8888/" + uri);
+        URL url = new URL(domain + uri);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
         connection.setDoOutput(true);
@@ -176,6 +274,71 @@ public class MyRpc implements ChannelClient.ChannelListener {
     }
 
     /**
+     * This method is called when an rpc relay is received by the channel
+     * listener indicating an rpc call on this endpoing
+     *
+     * @param relay
+     */
+    protected void onRpcCall(RpcRelay relay) {
+        assert (relay != null);
+
+        String result;
+
+        try {
+            result = interop.call(relay.getMethod(), relay.getArguments());
+        }
+        catch (Exception ex) {
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+
+            Throwable prev = null;
+            Throwable curr = ex;
+
+            while (curr != null) {
+
+                if (prev != null) {
+                    pw.println();
+                    pw.println("Caused By");
+                }
+
+                pw.print(ex.getClass().getName());
+                pw.print(": ");
+                pw.println(ex.getMessage());
+                ex.printStackTrace(pw);
+
+                prev = curr;
+                curr = ex.getCause();
+            }
+
+            pw.close();
+            result = sw.toString();
+        }
+
+        try {
+            returnCall(relay.getOriginLocator(), result, relay.getRequestId());
+        }
+        catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    /**
+     * This method is called when an rpc return comes back from another endpoint
+     * on which this endpoint called an rpc method
+     *
+     * @param relay
+     */
+    protected void onRpcReturnCall(RpcReturnRelay relay) {
+        assert (relay != null);
+
+        RpcCallback callback = callbacks.get(relay.getRequestId());
+
+        if (callback != null) {
+            callback.onSuccss(relay.getReturnValue());
+        }
+    }
+
+    /**
      * ******* Channel Callback methods after here ***********
      */
     @Override
@@ -183,26 +346,28 @@ public class MyRpc implements ChannelClient.ChannelListener {
         System.out.println("Channel opened");
     }
 
+    /**
+     * Called by the channel api whenever a message comes in
+     *
+     * @param message
+     */
     @Override
     public void onMessage(String message) {
-        RpcRelay relay = null;
-
         try {
-            relay = mapper.readValue(message, RpcRelay.class);
+            RpcRelay relay = mapper.readValue(message, RpcRelay.class);
+            onRpcCall(relay);
         }
         catch (IOException ex) {
-            throw new RuntimeException(ex);
+            try {
+                RpcReturnRelay relay
+                        = mapper.readValue(message, RpcReturnRelay.class);
+                onRpcReturnCall(relay);
+            }
+            catch (IOException ex2) {
+                throw new RuntimeException(ex2);
+            }
         }
 
-        assert (relay != null);
-
-        String result = interop.call(relay.getMethod(), relay.getArguments());
-
-        RpcCallback callback = callbacks.get(relay.getResponseId());
-
-        if (callback != null) {
-            callback.onSuccss(result);
-        }
     }
 
     @Override
@@ -213,6 +378,19 @@ public class MyRpc implements ChannelClient.ChannelListener {
     @Override
     public void onError(int code, String description) {
         System.out.println("Error " + code + " " + description);
+        try {
+            channelCleint.close();
+        }
+        catch (ChannelClient.ChannelException ex) {
+            ex.printStackTrace();
+        }
+
+        try {
+            connect();
+        }
+        catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
 }

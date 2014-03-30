@@ -19,18 +19,18 @@ public class RpcRelay {
 
     private final String method;
     private final Map<String, String> arguments;
-    private final String returnEndpoint;
-    private final String responseId;
+    private final String originLocator;
+    private final String requestId;
 
     public RpcRelay(
             @JsonProperty("method") String method,
             @JsonProperty("arguments") Map<String, String> arguments,
-            @JsonProperty("returnChannel") String returnChannel,
-            @JsonProperty("responseId") String responseId) {
+            @JsonProperty("originLocator") String originLocator,
+            @JsonProperty("requestId") String requestId) {
         this.method = method;
         this.arguments = ImmutableMap.copyOf(arguments);
-        this.returnEndpoint = returnChannel;
-        this.responseId = responseId;
+        this.originLocator = originLocator;
+        this.requestId = requestId;
     }
 
     /**
@@ -50,15 +50,15 @@ public class RpcRelay {
     /**
      * @return the returnEndpoint
      */
-    public String getReturnChannel() {
-        return returnEndpoint;
+    public String getOriginLocator() {
+        return originLocator;
     }
 
     /**
      * @return the responseId
      */
-    public String getResponseId() {
-        return responseId;
+    public String getRequestId() {
+        return requestId;
     }
 
 }

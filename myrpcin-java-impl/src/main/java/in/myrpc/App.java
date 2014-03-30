@@ -22,7 +22,7 @@ public class App implements Runnable {
 
     public App(Config config) throws IOException {
         myRpc = new MyRpc(config.getEndpointLocator(),
-                new RpcMethods());
+                new RpcMethods(), false);
         this.config = config;
 
         if (config.getEndpointLocator() == null) {
@@ -65,7 +65,10 @@ public class App implements Runnable {
                         new RpcCallback() {
 
                             public void onSuccss(String result) {
-                                long stop = Long.valueOf(result);
+                                long stop = System.currentTimeMillis();
+                                long mid = Long.valueOf(result);
+                                System.out.println("One-way time: "
+                                        + (mid - start) + "ms");
                                 System.out.println("Round-trip time: "
                                         + (stop - start) + "ms");
                             }

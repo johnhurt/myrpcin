@@ -13,6 +13,8 @@ import com.google.inject.Inject;
 import in.myrpc.model.RpcRelay;
 import in.myrpc.model.RpcRequest;
 import in.myrpc.model.RpcResponse;
+import in.myrpc.model.RpcReturn;
+import in.myrpc.model.RpcReturnRelay;
 import in.myrpc.server.model.PooledChannel;
 import in.myrpc.server.service.EndpointService;
 import in.myrpc.server.service.PooledChannelService;
@@ -49,10 +51,47 @@ public class RpcServlet {
     public String rpc(String postContent) throws IOException {
 
         RpcRequest call = mapper.readValue(postContent, RpcRequest.class);
-        RpcResponse result = null;
+        RpcResponse result;
 
         String sourceLocator = call.getSourceLocator();
         String targetLocator = call.getTargetLocator();
+
+        Endpoint source = endpointService.getByLocator(sourceLocator);
+        Endpoint target = endpointService.getByLocator(targetLocator);
+
+        if (source == null || target == null
+                || !source.getCenterpointRef().equivalent(
+                        target.getCenterpointRef())) {
+            return null;
+        }
+
+        PooledChannel channel = channelService.getByEndoint(targetLocator);
+
+        if (channel == null) {
+            return null;
+        }
+
+        RpcRelay rpc = new RpcRelay(call.getMethod(), call.getArguments(),
+                sourceLocator, call.getRequestId());
+
+        ChannelServiceFactory.getChannelService().sendMessage(
+                new ChannelMessage(Long.toHexString(channel.getId()),
+                        mapper.writeValueAsString(rpc)));
+
+        result = new RpcResponse(rpc.getRequestId());
+
+        return mapper.writeValueAsString(result);
+    }
+
+    @POST
+    @Path("/return/")
+    @Produces(MediaType.TEXT_PLAIN)
+    public String rpcReturn(String postContent) throws IOException {
+
+        RpcReturn returnCall = mapper.readValue(postContent, RpcReturn.class);
+
+        String sourceLocator = returnCall.getSourceLocator();
+        String targetLocator = returnCall.getTargetLocator();
 
         Endpoint source = endpointService.getByLocator(sourceLocator);
         Endpoint target = endpointService.getByLocator(targetLocator);
@@ -69,16 +108,13 @@ public class RpcServlet {
             return null;
         }
 
-        RpcRelay rpc = new RpcRelay(call.getMethod(), call.getArguments(),
-                sourceLocator, call.getRequestId());
+        RpcReturnRelay rpcReturn = new RpcReturnRelay(returnCall.getRequestId(),
+                returnCall.getReturnValue());
 
         ChannelServiceFactory.getChannelService().sendMessage(
                 new ChannelMessage(Long.toHexString(channel.getId()),
-                        mapper.writeValueAsString(rpc)));
+                        mapper.writeValueAsString(rpcReturn)));
 
-        result = new RpcResponse(rpc.getResponseId());
-
-        return mapper.writeValueAsString(result);
+        return null;
     }
-
 }

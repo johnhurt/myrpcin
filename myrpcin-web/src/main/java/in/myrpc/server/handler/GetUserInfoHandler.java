@@ -20,7 +20,6 @@ import in.myrpc.shared.model.Centerpoint;
 import in.myrpc.shared.model.Role;
 import in.myrpc.shared.model.User;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.HashMap;
 import org.orgama.server.auth.AuthUserService;
 import org.orgama.server.auth.ICoreSessionService;
@@ -83,7 +82,7 @@ public class GetUserInfoHandler
             }
 
             // get the accounts the current user has permissions to
-            EnumMap<Role, ArrayList<Account>> accounts
+            HashMap<Role, ArrayList<Account>> accounts
                     = accountService.getAccountsForUser(user);
 
             HashMap<String, Centerpoint> centerpoints

@@ -11,7 +11,6 @@ import in.myrpc.shared.model.Centerpoint;
 import in.myrpc.shared.model.Role;
 import in.myrpc.shared.model.User;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.HashMap;
 import org.orgama.shared.action.AbstractResult;
 
@@ -28,14 +27,14 @@ public class GetUserInfoResult extends AbstractResult {
     private Role wtf;
 
     private User user;
-    private EnumMap<Role, ArrayList<Account>> accounts;
+    private HashMap<Role, ArrayList<Account>> accounts;
     private HashMap<String, Centerpoint> centerpoints;
 
     public GetUserInfoResult() {
     }
 
     public GetUserInfoResult(User user,
-            EnumMap<Role, ArrayList<Account>> accounts,
+            HashMap<Role, ArrayList<Account>> accounts,
             HashMap<String, Centerpoint> centerpoints) {
         this.user = user;
         this.accounts = accounts;
@@ -52,7 +51,7 @@ public class GetUserInfoResult extends AbstractResult {
     /**
      * @return the accounts
      */
-    public EnumMap<Role, ArrayList<Account>> getAccounts() {
+    public HashMap<Role, ArrayList<Account>> getAccounts() {
         return accounts;
     }
 
