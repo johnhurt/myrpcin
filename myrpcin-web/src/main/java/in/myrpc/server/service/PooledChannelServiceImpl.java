@@ -96,10 +96,12 @@ public class PooledChannelServiceImpl implements PooledChannelService {
 
     @Override
     public PooledChannel get(String id) {
-        return Ofy.load()
-                .type(PooledChannel.class)
-                .id(Long.parseLong(id, 16))
-                .now();
+        return get(Long.parseLong(id, 16));
+    }
+
+
+    public PooledChannel get(long id) {
+        return Ofy.load().type(PooledChannel.class).id(id).now();
     }
 
     @Override
@@ -115,7 +117,7 @@ public class PooledChannelServiceImpl implements PooledChannelService {
             // If the resulting entity is expired, then delete it and return
             // null
             if (result.getExpirationDate() < System.currentTimeMillis()) {
-                Ofy.delete().entity(result); //Async (yay)
+                deleteById(result.getId());
                 return null;
             }
             return result;
@@ -127,7 +129,12 @@ public class PooledChannelServiceImpl implements PooledChannelService {
     }
 
     @Override
-    public void releaseById(final String id) {
+    public void releaseById(String id) {
+        releaseById(Long.parseLong(id, 16));
+    }
+
+    @Override
+    public void releaseById(final long id) {
         Ofy.transact(new VoidWork() {
 
             @Override
@@ -136,22 +143,26 @@ public class PooledChannelServiceImpl implements PooledChannelService {
                 //Get the channel being reslease
                 PooledChannel channel = get(id);
 
+                // Probably wont happend, but whatever
+                if (channel == null) {
+                    return;
+                }
+
                 //If the channel is expired, then delete it asynchronously
                 if (channel.getExpirationDate() < System.currentTimeMillis()) {
                     deleteById(id);
                 }
                 else {
                     channel.setEndpointLocator(null);
-                    Ofy.save().entity(channel);
+                    Ofy.save().entity(channel).now();
                 }
             }
         });
     }
 
     @Override
-    public void deleteById(String id) {
-        Ofy.delete().key(
-                Key.create(PooledChannel.class, Long.parseLong(id, 16)));
+    public void deleteById(long id) {
+        Ofy.delete().key(Key.create(PooledChannel.class, id));
     }
 
     @Override
@@ -162,6 +173,43 @@ public class PooledChannelServiceImpl implements PooledChannelService {
                 Long.toHexString(channel.getId()), message);
 
         ChannelServiceFactory.getChannelService().sendMessage(msg);
+    }
+
+    @Override
+    public void placeChannelOnHoldUntilDisconnect(final long id,
+            final String expectedEndpoingLocator) {
+        assert(expectedEndpoingLocator != null);
+
+        Ofy.transact(new VoidWork() {
+
+            @Override
+            public void vrun() {
+
+                //Get the channel being resleases
+                PooledChannel channel = get(id);
+
+                // Probably wont happend, but whatever
+                if (channel == null) {
+                    return;
+                }
+
+                // endpoint locator has changed since this channel was put on
+                // hold, so we shouldn't mess with it
+                if (!expectedEndpoingLocator.equals(
+                        channel.getEndpointLocator())) {
+                    return;
+                }
+
+                //If the channel is expired, then delete it asynchronously
+                if (channel.getExpirationDate() < System.currentTimeMillis()) {
+                    deleteById(id);
+                }
+                else {
+                    channel.setEndpointLocator("__OUT_OF_SERVICE__");
+                    Ofy.save().entity(channel).now();
+                }
+            }
+        });
     }
 
 }

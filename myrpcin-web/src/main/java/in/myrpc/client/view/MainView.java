@@ -1,20 +1,30 @@
 package in.myrpc.client.view;
 
+import com.google.gwt.appengine.channel.client.Channel;
+import com.google.gwt.appengine.channel.client.ChannelError;
+import com.google.gwt.appengine.channel.client.ChannelFactory;
 import com.google.gwt.appengine.channel.client.Socket;
+import com.google.gwt.appengine.channel.client.SocketListener;
+import com.google.gwt.event.dom.client.ClickEvent;
+import com.google.gwt.event.dom.client.ClickHandler;
 import com.google.gwt.event.dom.client.HasClickHandlers;
 import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.DOM;
 import com.google.gwt.user.client.Element;
+import com.google.gwt.user.client.rpc.AsyncCallback;
+import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.HTMLPanel;
 import com.google.gwt.user.client.ui.Label;
+import com.google.gwt.user.client.ui.TextBox;
 import in.myrpc.client.presenter.MainPresenter;
 import java.util.ArrayList;
 import java.util.Iterator;
 import org.orgama.client.event.ClickHandlerArray;
 import org.orgama.client.presenter.AuthInfoWidgetPresenter;
 import org.orgama.client.view.OrgamaView;
+import org.orgama.shared.Logger;
 
 /**
  * Implementation of the main view for this orgama project
@@ -42,6 +52,12 @@ public class MainView extends OrgamaView
 
     @UiField
     HTMLPanel pnlAuth;
+
+    @UiField
+    TextBox txtToken;
+
+    @UiField
+    Button btnOpen;
 
     @UiField
     Label lblStatus;
@@ -108,6 +124,48 @@ public class MainView extends OrgamaView
 
         pnlAccounts.add(new HTML(
                 SafeHtmlUtils.fromTrustedString(html.toString())));
+
+        btnOpen.addClickHandler(new ClickHandler() {
+
+            @Override
+            public void onClick(ClickEvent event) {
+                ChannelFactory.createChannel(txtToken.getText(),
+                        new AsyncCallback<Channel>() {
+
+                    @Override
+                    public void onFailure(Throwable caught) {
+                        Logger.debug("failure");
+                    }
+
+                    @Override
+                    public void onSuccess(Channel result) {
+                        result.open(new SocketListener() {
+
+                            @Override
+                            public void onOpen() {
+                                Logger.debug("open");
+                            }
+
+                            @Override
+                            public void onMessage(String message) {
+                                Logger.debug(message);
+                            }
+
+                            @Override
+                            public void onError(ChannelError error) {
+                                Logger.error(error.toString());
+                            }
+
+                            @Override
+                            public void onClose() {
+                                Logger.debug("close");
+                            }
+                        });
+                    }
+                });
+            }
+        });
+
     }
 
     @Override

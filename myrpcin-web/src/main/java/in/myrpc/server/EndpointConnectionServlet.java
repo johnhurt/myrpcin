@@ -57,11 +57,16 @@ public class EndpointConnectionServlet {
 
         PooledChannel channel = channelService.getByEndoint(endpointLocator);
 
-        if (channel == null) {
-            channel = channelService.getNewForEndpoint(endpointLocator);
+        if (channel != null) {
+            channelService.placeChannelOnHoldUntilDisconnect(
+                    channel.getId(), endpointLocator);
         }
 
-        ConnectResponse result = new ConnectResponse(channel.getToken());
+        channel = channelService.getNewForEndpoint(endpointLocator);
+
+        ConnectResponse result = new ConnectResponse(channel.getToken(),
+                (channel.getExpirationDate() -
+                        System.currentTimeMillis()) / 1000);
 
         return mapper.writeValueAsString(result);
     }

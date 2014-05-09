@@ -21,9 +21,14 @@ public interface PooledChannelService {
 
     PooledChannel getByEndoint(String endpointLocator);
 
+    void releaseById(long id);
+
     void releaseById(String id);
 
-    void deleteById(String id);
+    void placeChannelOnHoldUntilDisconnect(
+            long id, String expectedEndpoingLocator);
+
+    void deleteById(long id);
 
     void sendMessage(String endpointLocator, String message);
 }

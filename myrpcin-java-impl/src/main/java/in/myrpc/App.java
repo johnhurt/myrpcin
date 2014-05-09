@@ -20,7 +20,7 @@ public class App implements Runnable {
     private final MyRpc myRpc;
     private final Config config;
 
-    public App(Config config) throws IOException {
+    public App(Config config) throws IOException, MyRpcException {
         myRpc = new MyRpc(config.getEndpointLocator(),
                 new RpcMethods(), false);
         this.config = config;

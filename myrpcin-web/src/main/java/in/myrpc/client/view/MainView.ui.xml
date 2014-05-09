@@ -6,14 +6,17 @@
 	<ui:style src="res/css/MainView.css"/>
 
     <g:HTMLPanel>
-		<h1>Welcome!</h1>
+		<h2>Welcome to MyRpc.in</h2>
 		<p>
-			This is the default application produced by the orgama application
-			archetype.
+			This application provides you with a way to control your remote
+            devices safely and simply.
 		</p>
         <g:HTMLPanel styleName="{style.authWidget}" ui:field="pnlAuth"/>
 
         <g:Label ui:field="lblStatus"/>
+
+        <g:TextBox ui:field="txtToken"/>
+        <g:Button ui:field="btnOpen">Open</g:Button>
 
         <g:HTMLPanel ui:field="pnlAccounts"/>
     </g:HTMLPanel>

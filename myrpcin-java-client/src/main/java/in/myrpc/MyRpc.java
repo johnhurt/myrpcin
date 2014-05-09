@@ -2,7 +2,6 @@ package in.myrpc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Maps;
-import in.myrpc.channel.ChannelClient;
 import in.myrpc.model.ConnectRequest;
 import in.myrpc.model.ConnectResponse;
 import in.myrpc.model.ProvisionRequest;
@@ -11,6 +10,10 @@ import in.myrpc.model.RpcRelay;
 import in.myrpc.model.RpcRequest;
 import in.myrpc.model.RpcReturn;
 import in.myrpc.model.RpcReturnRelay;
+import in.myrpc.receiver.ChannelClient;
+import in.myrpc.receiver.EvaluativeMessageReceiver;
+import in.myrpc.receiver.MessageHandler;
+import in.myrpc.receiver.MessageReceiver;
 import in.myrpc.reflect.RpcMethodReflection;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -27,19 +30,20 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
-import org.json.JSONException;
 
 /**
  * class that gives access to the restful methods of MyRpc.in
  *
  * @author kguthrie
  */
-public class MyRpc implements ChannelClient.ChannelListener {
+public class MyRpc implements ChannelClient.ChannelListener, MessageHandler {
 
     private static final String localApp = "http://localhost:8888";
     private static final String productionApp = "https://www.myrpc.in";
@@ -51,7 +55,10 @@ public class MyRpc implements ChannelClient.ChannelListener {
     private final String domain;
 
     private final Map<String, RpcCallback> callbacks;
-    private ChannelClient channelCleint;
+
+    private MessageReceiver receiver;
+
+    private Timer reconnectAfterExpireTimer;
 
     public MyRpc(String endpointLocator, Object rpcMethodContainer,
             boolean local) {
@@ -114,14 +121,13 @@ public class MyRpc implements ChannelClient.ChannelListener {
      * @param name
      * @param centerpointLocator
      * @return endpoint locator
-     * @throws java.io.IOException
+     * @throws in.myrpc.MyRpcException
      */
     public String provision(String name, String centerpointLocator)
-            throws IOException {
+            throws MyRpcException {
         ProvisionRequest pr = new ProvisionRequest(name, centerpointLocator);
-        String prString = mapper.writeValueAsString(pr);
-        ProvisionResponse response = mapper.readValue(
-                post("/r/provision/", prString), ProvisionResponse.class);
+        ProvisionResponse response = post("/r/provision/", pr,
+                ProvisionResponse.class);
         endpointLocator = response.getEndpointLocator();
         return endpointLocator;
     }
@@ -129,14 +135,13 @@ public class MyRpc implements ChannelClient.ChannelListener {
     /**
      * Connect to the server as an endpoint
      *
-     * @throws java.io.IOException
+     * @throws in.myrpc.MyRpcException
      */
-    public void connect() throws IOException {
+    public void connect() throws MyRpcException {
         ConnectRequest request = new ConnectRequest(endpointLocator);
-        String rqString = mapper.writeValueAsString(request);
-        String rspString = post("/r/connect", rqString);
-        ConnectResponse response
-                = mapper.readValue(rspString, ConnectResponse.class);
+        ConnectResponse response = post("/r/connect", request,
+                ConnectResponse.class);
+
         String token = response.getChannelToken();
 
         URI uri = null;
@@ -145,36 +150,69 @@ public class MyRpc implements ChannelClient.ChannelListener {
             uri = new URI(domain);
         }
         catch (URISyntaxException e) {
-            throw new IOException(e);
+            throw new MyRpcException(e);
         }
 
-        channelCleint = ChannelClient.createChannel(uri, token, this);
+        // channelClient = ChannelClient.createChannel(uri, token, this);
 
-        try {
-            channelCleint.open();
+        receiver = new EvaluativeMessageReceiver(token, this);
+
+        //try {
+            // channelClient.open();
+        receiver.open();
+        //}
+//        catch (ChannelClient.ChannelException e) {
+//            throw new MyRpcException(e);
+//        }
+
+
+        // If the cahnnel was opened successfully, then set a timer to reconnect
+        // after the lifetime of the channel passes
+
+        if (reconnectAfterExpireTimer != null) {
+            reconnectAfterExpireTimer.cancel();
         }
-        catch (ChannelClient.ChannelException e) {
-            throw new IOException(e);
-        }
-        catch (JSONException e) {
-            throw new IOException(e);
-        }
+
+        reconnectAfterExpireTimer = new Timer();
+        reconnectAfterExpireTimer.schedule(new TimerTask() {
+
+            @Override
+            public void run() {
+                onError(0, "Reconnect before timeout");
+//                catch(ChannelClient.ChannelException ex) {
+//                    throw new RuntimeException(ex);
+//                }
+//                catch(IOException ioe) {
+//                    throw new RuntimeException(ioe);
+//                }
+            }
+        }, response.getSecondsUntilExpire() * 1000);
     }
 
     /**
      * Close the current channel connection
      */
     public void close() {
-        if (channelCleint == null) {
-            return;
-        }
-
         try {
-            channelCleint.close();
+            //ChannelClient oldClient = channelCleint;
+            MessageReceiver oldReceiver = receiver;
+            connect();
+            //oldClient.close();
+            oldReceiver.close();
         }
-        catch (ChannelClient.ChannelException ex) {
-            ex.printStackTrace();
+        catch (MyRpcException e) {
+            throw new RuntimeException(e);
         }
+//        if (channelCleint == null) {
+//            return;
+//        }
+//
+//        try {
+//            channelCleint.close();
+//        }
+//        catch (ChannelClient.ChannelException ex) {
+//            ex.printStackTrace();
+//        }
     }
 
     /**
@@ -185,11 +223,11 @@ public class MyRpc implements ChannelClient.ChannelListener {
      * @param method
      * @param arguments
      * @param callback
-     * @throws java.io.IOException
+     * @throws in.myrpc.MyRpcException
      */
     public void call(String targetEndpointLocator, String method,
             Map<String, String> arguments, RpcCallback callback)
-            throws IOException {
+            throws MyRpcException {
 
         String requestId = Integer.toHexString(lastRequestId.incrementAndGet());
 
@@ -201,7 +239,7 @@ public class MyRpc implements ChannelClient.ChannelListener {
             callbacks.put(requestId, callback);
         }
 
-        post("/r/pc", mapper.writeValueAsString(rpc));
+        post("/r/pc", rpc, null);
 
     }
 
@@ -214,13 +252,12 @@ public class MyRpc implements ChannelClient.ChannelListener {
      * @param requestId
      */
     protected void returnCall(String originalSourceLocator, String value,
-            String requestId) throws IOException {
+            String requestId) throws MyRpcException {
 
         RpcReturn result = new RpcReturn(requestId, value,
                 originalSourceLocator, endpointLocator);
-        String rpcReturnString = mapper.writeValueAsString(result);
 
-        post("/r/pc/return", rpcReturnString);
+        post("/r/pc/return", result, null);
     }
 
     /**
@@ -229,7 +266,8 @@ public class MyRpc implements ChannelClient.ChannelListener {
      * @param uri
      * @param content
      */
-    private String post(String uri, String content) throws IOException {
+    private <T> T post(String uri, Object content, Class<T> returnType)
+            throws MyRpcException {
 
         assert (uri != null);
         assert (content != null);
@@ -238,39 +276,50 @@ public class MyRpc implements ChannelClient.ChannelListener {
             uri = "/" + uri;
         }
 
-        byte[] contentBytes = content.getBytes("UTF-8");
-        URL url = new URL(domain + uri);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        try {
 
-        connection.setDoOutput(true);
-        connection.setDoInput(true);
-        connection.setInstanceFollowRedirects(false);
-        connection.setRequestMethod("POST");
-        connection.setRequestProperty("charset", "utf-8");
-        connection.setRequestProperty("Content-Length",
-                "" + Integer.toString(contentBytes.length));
-        connection.setUseCaches(false);
+            byte[] contentBytes = mapper.writeValueAsBytes(content); //utf-8
+            URL url = new URL(domain + uri);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
-        OutputStream wr = connection.getOutputStream();
-        wr.write(contentBytes);
-        wr.flush();
-        wr.close();
+            connection.setDoOutput(true);
+            connection.setDoInput(true);
+            connection.setInstanceFollowRedirects(false);
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("charset", "utf-8");
+            connection.setRequestProperty("Content-Length",
+                    Integer.toString(contentBytes.length));
+            connection.setUseCaches(false);
 
-        BufferedReader in = new BufferedReader(new InputStreamReader(
-                connection.getInputStream()));
+            OutputStream wr = connection.getOutputStream();
+            wr.write(contentBytes);
+            wr.flush();
+            wr.close();
 
-        String line;
-        StringBuilder result = new StringBuilder();
+            BufferedReader in = new BufferedReader(new InputStreamReader(
+                    connection.getInputStream()));
 
-        while ((line = in.readLine()) != null) {
-            result.append(line);
-            result.append("\n");
+            String line;
+            StringBuilder result = new StringBuilder();
+
+            while ((line = in.readLine()) != null) {
+                result.append(line);
+                result.append("\n");
+            }
+
+            in.close();
+            connection.disconnect();
+            if (returnType != null) {
+                return mapper.readValue(result.toString(), returnType);
+            }
+            else {
+                return null;
+            }
+        }
+        catch(IOException e) {
+            throw new MyRpcException("Post to " + uri + " failed", e);
         }
 
-        in.close();
-        connection.disconnect();
-
-        return result.toString();
     }
 
     /**
@@ -317,7 +366,7 @@ public class MyRpc implements ChannelClient.ChannelListener {
         try {
             returnCall(relay.getOriginLocator(), result, relay.getRequestId());
         }
-        catch (IOException ex) {
+        catch (MyRpcException ex) {
             throw new RuntimeException(ex);
         }
     }
@@ -379,18 +428,28 @@ public class MyRpc implements ChannelClient.ChannelListener {
     public void onError(int code, String description) {
         System.out.println("Error " + code + " " + description);
         try {
-            channelCleint.close();
-        }
-        catch (ChannelClient.ChannelException ex) {
-            ex.printStackTrace();
-        }
-
-        try {
-            connect();
-        }
-        catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
+                    //ChannelClient oldClient = channelCleint;
+                    MessageReceiver oldReceiver = receiver;
+                    connect();
+                    //oldClient.close();
+                    oldReceiver.close();
+                }
+                catch (MyRpcException e) {
+                    throw new RuntimeException(e);
+                }
+//        try {
+//            channelCleint.close();
+//        }
+//        catch (ChannelClient.ChannelException ex) {
+//            ex.printStackTrace();
+//        }
+//
+//        try {
+//            connect();
+//        }
+//        catch (IOException ex) {
+//            throw new RuntimeException(ex);
+//        }
     }
 
 }

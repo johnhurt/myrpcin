@@ -10,10 +10,14 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 public class ConnectResponse {
     private final String channelToken;
+    private final long secondsUntilExpire;
 
     @JsonCreator
-    public ConnectResponse(@JsonProperty("channelToken") String channelToken) {
+    public ConnectResponse(
+            @JsonProperty("channelToken") String channelToken,
+            @JsonProperty("secondsUntilExpire") long secondsUntilExpire) {
         this.channelToken = channelToken;
+        this.secondsUntilExpire = secondsUntilExpire;
     }
 
     /**
@@ -21,6 +25,13 @@ public class ConnectResponse {
      */
     public String getChannelToken() {
         return channelToken;
+    }
+
+    /**
+     * @return the secondsUntilExpire
+     */
+    public long getSecondsUntilExpire() {
+        return secondsUntilExpire;
     }
 
 }
