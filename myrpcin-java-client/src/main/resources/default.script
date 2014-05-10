@@ -2,42 +2,42 @@
 
 talkGadgetUrlPrefix = inc(dec(random("3", "true", "false", "false")));
 
-talkGadgetUrl = "https://" + talkGadgetUrlPrefix
+talkGadgetUrl = "http://" + talkGadgetUrlPrefix
 		+ ".talkgadget.google.com/talkgadget";
 
-connectUrl = talkGadgetUrl 
-		+ "/d?token=" 
+connectUrl = talkGadgetUrl
+		+ "/d?token="
 		+ token()
-		+ "&xpc=%7B%22cn%22%3A%22" 
-		+ random("10", "false") 
-		+ "%22%2C%22tp%22%3Anull%2C%22osh%22%3Anull%2C%22ppu%22%3A%22" 
-		+ "https%3A%2F%2Fwww.myrpc.in%2F_ah%2Fchannel%2Fxpc_blank%22%2C%22"
-		+ "lpu%22%3A%22https%3A%2F%2F" 
-		+ talkGadgetUrlPrefix 
+		+ "&xpc=%7B%22cn%22%3A%22"
+		+ random("10", "false")
+		+ "%22%2C%22tp%22%3Anull%2C%22osh%22%3Anull%2C%22ppu%22%3A%22"
+		+ "http%3A%2F%2Fwww.myrpc.in%2F_ah%2Fchannel%2Fxpc_blank%22%2C%22"
+		+ "lpu%22%3A%22https%3A%2F%2F"
+		+ talkGadgetUrlPrefix
 		+ ".talkgadget.google.com%2Ftalkgadget%2Fxpc_blank%22%7D";
-		
+
 connectResult = get(connectUrl, "https://www.myrpc.in");
 
 # We expect this value to be a list of quoted string separated by commas
-importantConnectResultSection 
-		= regex("new\\s+chat\\.WcsDataClient\\(([\\s\\S]*)\\)\\;", 
+importantConnectResultSection
+		= regex("new\\s+chat\\.WcsDataClient\\(([\\s\\S]*)\\)\\;",
 				connectResult);
 
 # The connect result is huge, so write over it with something small
 connectResult = "";
 
-# clid is the 3rd quoted string	
-clid = regex("^(?:\\s*\\"[^\\"]*\\"\\s*,){2}\\s*\\"([^\\"]*)\\"\\s*",
+# clid is the 3rd quoted string
+clid = regex("^(?:\\s*\"[^\"]*\"\\s*,){2}\\s*\"([^\"]*)\"\\s*",
 		importantConnectResultSection);
-		
-# gsessionid is the 4th quoted string
-gsessionid = regex("^(?:\\s*\\"[^\\"]*\\"\\s*,){3}\\s*\\"([^\\"]*)\\"\\s*",
-		importantConnectResultSection);
-		
-# do some basic tests.  These might be pointless, but we are trying to stay as
-# true as possible to the protocol 
 
-testUrl_1 = talkGadgetUrl 
+# gsessionid is the 4th quoted string
+gsessionid = regex("^(?:\\s*\"[^\"]*\"\\s*,){3}\\s*\"([^\"]*)\"\\s*",
+		importantConnectResultSection);
+
+# do some basic tests.  These might be pointless, but we are trying to stay as
+# true as possible to the protocol
+
+testUrl_1 = talkGadgetUrl
 		+ "/dch/test?VER=8&clid="
 		+ clid
 		+ "&gsessionid="
@@ -51,7 +51,7 @@ testUrl_1 = talkGadgetUrl
 # This should be "[]" No reason to check it for our purposes though
 testResult_1 = get(testUrl_1, connectUrl, "2");
 
-testUrl_2 = talkGadgetUrl 
+testUrl_2 = talkGadgetUrl
 		+ "/dch/test?VER=8&clid="
 		+ clid
 		+ "&gsessionid="
@@ -69,9 +69,9 @@ testResult_2 = get(testUrl_2, connectUrl, "5");
 # These are strings, but we treat them as numbers.  Incrementing immediately
 # makes does away leading zeros
 
-rid = dec(inc(random("5", "true", "false", "false"))); 
+rid = dec(inc(random("5", "true", "false", "false")));
 
-bindUrlForPost = talkGadgetUrl 
+bindUrlForPost = talkGadgetUrl
 		+ "/dch/bind?VER=8&clid="
 		+ clid
 		+ "&gsessionid="
@@ -89,10 +89,10 @@ bindResult = post(bindUrlForPost, connectUrl, "count=0");
 sid = regex("\"([a-zA-Z0-9_\\-]{3,})\"", bindResult);
 
 rid = inc(rid);
-aid = "2"; 
+aid = "2";
 ofs = "0";
 
-pollAndPostUrlPrefix = talkGadgetUrl 
+pollAndPostUrlPrefix = talkGadgetUrl
 		+ "/dch/bind?VER=8&clid="
 		+ clid
 		+ "&gsessionid="
@@ -100,22 +100,22 @@ pollAndPostUrlPrefix = talkGadgetUrl
 		+ "&prop=data&token="
 		+ token()
         + "&ec=%5B%22ci%3Aec%22%5D";
-        
+
 pollUrlPrefix = pollAndPostUrlPrefix
 		+ "&RID=rpc&SID="
         + sid;
-        
+
 postUrlPrefix = pollAndPostUrlPrefix
 		+ "&SID="
         + sid;
-        
-initialPostBody = 
+
+initialPostBody =
 		"count=1&ofs="
 		+ ofs
 		+ "&req0_m=%5B%22connect-add-client%22%5D&req0_c="
 		+ clid
 		+ "&req0__sc=c";
-		
+
 initialPostUrl = postUrlPrefix
 		+ "&RID="
 		+ rid
@@ -126,13 +126,14 @@ initialPostUrl = postUrlPrefix
 		+ "&t=1";
 
 # This post performs the connect-add-client operation ... whatever that means
-initialPostResponse = post(initialPostUrl, connectUrl, initialPostBody);
+initialPostResponse = post(initialPostUrl, connectUrl, initialPostBody,
+        "0", "0", "postContext");
 
 
 # This is the top of the repeated section.  From here we create a new long poll
 # connection and within an inner "loop", read from it in chunks
 label("longPollStart");
-        
+
 pollUrl = pollUrlPrefix
 		+ "&CI=0&AID="
 		+ aid
@@ -140,24 +141,22 @@ pollUrl = pollUrlPrefix
 		+ random("12", "true", "false")
 		+ "&t=1";
 
-rid = inc(rid);
-
-# Top of the inner loop in which we read a chunk from the poll and act on it 
-# based on its contents		
+# Top of the inner loop in which we read a chunk from the poll and act on it
+# based on its contents
 label("longPollReadStart");
 
 # read the first line from the chunk which should just contain the length of the
 # rest of the chunk
-pollLength = get(pollUrl, connectUrl, "0", "1"); 
+pollLength = get(pollUrl, connectUrl, "0", "1", "postContext");
 
 # if the polling connection has been closed, the result will be empty
 goto(if(pollLength, "", "longPollStart"));
 
 # read the size of the content as a string
-pollContent = get(pollUrl, connectUrl, pollLength);
+pollContent = get(pollUrl, connectUrl, pollLength, "0", "postContext");
 
 # Check for noop message
-aid = regex("^\\[\\s*\\[\\s*(\\d+)\\s*,\\s*\\[\"noop\"\\]\\s*\\]\\s*\\]", 
+aid = regex("^\\[\\s*\\[\\s*(\\d+)\\s*,\\s*\\[\"noop\"\\]\\s*\\]\\s*\\]",
 		pollContent);
 
 goto(if(aid, "longPollReadStart", ""));
@@ -165,7 +164,7 @@ goto(if(aid, "longPollReadStart", ""));
 label("readMessageBlock");
 
 messageBlock = regex(
-		"(\\[\\d+\\s*,\\s*\\[\\s*\"c\"\\s*,\\[[\\s\\S]*?\\]\\s*\\]\\s*\\]\\s*\\])", 
+		"(\\[\\d+\\s*,\\s*\\[\\s*\"c\"\\s*,\\[[\\s\\S]*?\\]\\s*\\]\\s*\\]\\s*\\])",
 		pollContent, "true");
 
 # If the message block is empty, then start reading again
@@ -199,7 +198,7 @@ postUrl = postUrlPrefix
 		+ "&zx="
 		+ random("12", "true", "false")
 		+ "&t=1";
-		
+
 postBody = "count=1&ofs="
 		+ ofs
 		+ "&req0_t=cdr&req0_p=%5B%22cdr%22%2C"
@@ -210,23 +209,23 @@ postBody = "count=1&ofs="
 		+ clid
 		+ "&req0__sc=c";
 
-# post(postUrl, connectUrl, postBody);
-
+postResponse = post(postUrl, connectUrl, postBody, "0", "0", "postContext");
 
 # Start over by reading the next message block
 goto("readMessageBlock");
 
 label("skipRebindPost");
 
-channelMessage = regex("\\[\\s*\"ae\"\\s*,\\s*\"([\\s\\S]*?[^\\\\])\"\\s*\\]", 
+channelMessage = regex("\\[\\s*\"ae\"\\s*,\\s*\"([\\s\\S]*?[^\\\\])\"\\s*\\]",
 		messageBlock);
 
 goto(if(channelMessage, "", "skipHandleMessage"));
 
-
-
 label("skipHandleMessage");
 
+
+# Start over by reading the next message block
+goto("readMessageBlock");
 
 
 

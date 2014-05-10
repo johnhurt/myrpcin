@@ -719,6 +719,7 @@ public class ScriptEnvironment implements Runnable {
         String referer = args[1];
         int minBytes = 0;
         int maxLines = 0;
+        String contextName = null;
 
         if (url == null || url.length() == 0
                 || referer == null || referer.length() == 0) {
@@ -733,8 +734,12 @@ public class ScriptEnvironment implements Runnable {
             maxLines = Integer.parseInt(args[3]);
         }
 
+        if (args.length > 4) {
+            contextName = args[4];
+        }
+
         try {
-            return client.get(url, referer, minBytes, maxLines);
+            return client.get(url, referer, minBytes, maxLines, contextName);
         }
         catch (IOException e) {
             throw new MyRpcException("Get failed", e);
@@ -766,6 +771,7 @@ public class ScriptEnvironment implements Runnable {
         String content = args[2];
         int minBytes = 0;
         int maxLines = 0;
+        String contextName = null;
 
         if (url == null || url.length() == 0
                 || referer == null || referer.length() == 0) {
@@ -780,9 +786,13 @@ public class ScriptEnvironment implements Runnable {
             maxLines = Integer.parseInt(args[4]);
         }
 
+        if (args.length > 5) {
+            contextName = args[5];
+        }
+
         try {
             return client.post(url, referer, content,
-                    minBytes, maxLines);
+                    minBytes, maxLines, contextName);
         }
         catch (IOException e) {
             throw new MyRpcException("Post failed", e);
@@ -901,6 +911,8 @@ public class ScriptEnvironment implements Runnable {
         if (args[0].length() == 0) {
             return new StringBuilder();
         }
+
+        System.out.println("GoTo " + args[0] + "\n\n");
 
         Integer location = labels.get(args[0]);
 
