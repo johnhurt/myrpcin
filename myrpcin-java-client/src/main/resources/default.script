@@ -178,6 +178,11 @@ cdr_2 = regex(
 		"\"p\"\\s*(?:,\\s*\"[^\"]{0,50}\")(?:\\s*,[^,]*){5}\\s*,\\s*([\\w]+)\\]",
 		messageBlock);
 
+# If we got a value for cdr_2, relay to the handler that the channel is open
+goto(if(cdr_2, "", "readMessageBlock"));
+
+onOpen();
+
 goto("readMessageBlock");
 
 label("skipExtractCdr_2");
@@ -208,7 +213,7 @@ postBody = "count=1&ofs="
 		+ clid
 		+ "&req0__sc=c";
 
-# post(postUrl, connectUrl, postBody);
+post(postUrl, connectUrl, postBody);
 
 
 # Start over by reading the next message block
@@ -221,6 +226,8 @@ channelMessage = regex("\\[\\s*\"ae\"\\s*,\\s*\"([\\s\\S]*?[^\\\\])\"\\s*\\]",
 
 goto(if(channelMessage, "", "skipHandleMessage"));
 
+onMessage(channelMessage);
+
 # Start over by reading the next message block
 goto("readMessageBlock");
 
@@ -230,4 +237,5 @@ label("skipHandleMessage");
 # Start over by reading the next message block
 goto("readMessageBlock");
 
+label("end");
 

@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
 
-public class App implements Runnable {
+public class App implements Runnable, MyRpcErrorHandler {
 
     private static final String configFile = "config.json";
 
@@ -22,7 +22,7 @@ public class App implements Runnable {
 
     public App(Config config) throws IOException, MyRpcException {
         myRpc = new MyRpc(config.getEndpointLocator(),
-                new RpcMethods(), false);
+                new RpcMethods(), this, false);
         this.config = config;
 
         if (config.getEndpointLocator() == null) {
@@ -33,7 +33,7 @@ public class App implements Runnable {
             config.save();
         }
 
-        myRpc.connect();
+        myRpc.start();
     }
 
     /**
@@ -62,7 +62,7 @@ public class App implements Runnable {
 
                 myRpc.call(target, "onMessage",
                         ImmutableMap.of("message", message),
-                        new RpcCallback() {
+                        new MyRpcCallback() {
 
                             public void onSuccss(String result) {
                                 long stop = System.currentTimeMillis();
@@ -78,6 +78,10 @@ public class App implements Runnable {
         catch (Exception ex) {
             ex.printStackTrace();
         }
+    }
+
+    public void onError(MyRpcErrorEvent error) {
+        System.out.println("Error: " + error.getMessage());
     }
 
 }

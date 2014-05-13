@@ -62,7 +62,7 @@ public class EvaluativeMessageReceiver extends MessageReceiver {
         }
 
         env.setToken(token);
-
+        env.setMessageHandler(handler);
         Thread t = new Thread(env);
 
         t.start();

@@ -160,6 +160,15 @@ public class Operation {
             case ScriptEnvironment.DEC: {
                 return env.decrement(arguments);
             }
+            case ScriptEnvironment.ON_OPEN: {
+                return env.onOpen();
+            }
+            case ScriptEnvironment.ON_MESSAGE: {
+                return env.onMessage(arguments);
+            }
+            case ScriptEnvironment.ON_ERROR: {
+                return env.onError(arguments);
+            }
         }
 
         throw new MyRpcException("Uknown function " + function);

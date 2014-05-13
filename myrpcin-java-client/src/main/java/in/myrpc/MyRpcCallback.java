@@ -11,6 +11,6 @@ package in.myrpc;
  *
  * @author kguthrie
  */
-public interface RpcCallback {
+public interface MyRpcCallback {
     void onSuccss(String result);
 }

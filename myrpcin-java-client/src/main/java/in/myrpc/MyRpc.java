@@ -10,7 +10,6 @@ import in.myrpc.model.RpcRelay;
 import in.myrpc.model.RpcRequest;
 import in.myrpc.model.RpcReturn;
 import in.myrpc.model.RpcReturnRelay;
-import in.myrpc.receiver.ChannelClient;
 import in.myrpc.receiver.EvaluativeMessageReceiver;
 import in.myrpc.receiver.MessageHandler;
 import in.myrpc.receiver.MessageReceiver;
@@ -22,8 +21,6 @@ import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
@@ -43,39 +40,44 @@ import javax.net.ssl.X509TrustManager;
  *
  * @author kguthrie
  */
-public class MyRpc implements ChannelClient.ChannelListener, MessageHandler {
+public class MyRpc implements MessageHandler {
 
     private static final String localApp = "http://localhost:8888";
     private static final String productionApp = "https://www.myrpc.in";
 
     private final ObjectMapper mapper;
     private final RpcMethodReflection interop;
-    private String endpointLocator;
     private final AtomicInteger lastRequestId;
     private final String domain;
+    private final Map<String, MyRpcCallback> callbacks;
+    private final MyRpcErrorHandler errorHandler;
 
-    private final Map<String, RpcCallback> callbacks;
-
+    private String endpointLocator;
     private MessageReceiver receiver;
+    private boolean connected;
 
     private Timer reconnectAfterExpireTimer;
 
     public MyRpc(String endpointLocator, Object rpcMethodContainer,
-            boolean local) {
-        lastRequestId = new AtomicInteger(0);
-        mapper = new ObjectMapper();
+            MyRpcErrorHandler errorHandler, boolean local) {
+
+        this.lastRequestId = new AtomicInteger(0);
+        this.mapper = new ObjectMapper();
         this.endpointLocator = endpointLocator;
         this.interop = new RpcMethodReflection(rpcMethodContainer);
         this.callbacks = Maps.newHashMap();
-        domain = local ? localApp : productionApp;
+        this.domain = local ? localApp : productionApp;
+        this.connected = false;
+        this.errorHandler = errorHandler;
 
+        // :(
         ignoreUntrustedCertificateErrors();
 
         // Add a shutdown callback so that channels are closed when the jvm
         // exists
         Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
             public void run() {
-                close();
+                disconnect();
             }
         }));
     }
@@ -133,38 +135,61 @@ public class MyRpc implements ChannelClient.ChannelListener, MessageHandler {
     }
 
     /**
-     * Connect to the server as an endpoint
+     * Start the MyRpc service
+     */
+    public void start() {
+        Thread t = new Thread(new Runnable() {
+
+            public void run() {
+                try {
+                    connect();
+                }
+                catch (MyRpcException ex) {
+                    StringBuilder errorMessage = new StringBuilder();
+
+                    Throwable cause = ex;
+
+                    while (cause != null) {
+                        errorMessage.append(cause.getClass().getName());
+                        errorMessage.append(": ");
+                        errorMessage.append(cause.getMessage());
+                        errorMessage.append("\n");
+
+                        for (StackTraceElement e : cause.getStackTrace()) {
+                            errorMessage.append(e.toString());
+                            errorMessage.append("\n");
+                        }
+
+                        cause = cause.getCause();
+
+                        if (cause != null) {
+                            errorMessage.append("\nCaused By:\n");
+                        }
+                    }
+                    onError(errorMessage.toString());
+                }
+            }
+        },  "MyRpcConnectThread");
+
+        t.start();
+    }
+
+    /**
+     * Connect to the server as an endpoint and enable autoReconnect if
+     * instructed
      *
      * @throws in.myrpc.MyRpcException
      */
-    public void connect() throws MyRpcException {
+    protected void connect() throws MyRpcException {
+
         ConnectRequest request = new ConnectRequest(endpointLocator);
         ConnectResponse response = post("/r/connect", request,
                 ConnectResponse.class);
 
         String token = response.getChannelToken();
 
-        URI uri = null;
-
-        try {
-            uri = new URI(domain);
-        }
-        catch (URISyntaxException e) {
-            throw new MyRpcException(e);
-        }
-
-        // channelClient = ChannelClient.createChannel(uri, token, this);
-
         receiver = new EvaluativeMessageReceiver(token, this);
-
-        //try {
-            // channelClient.open();
         receiver.open();
-        //}
-//        catch (ChannelClient.ChannelException e) {
-//            throw new MyRpcException(e);
-//        }
-
 
         // If the cahnnel was opened successfully, then set a timer to reconnect
         // after the lifetime of the channel passes
@@ -178,41 +203,26 @@ public class MyRpc implements ChannelClient.ChannelListener, MessageHandler {
 
             @Override
             public void run() {
-                onError(0, "Reconnect before timeout");
-//                catch(ChannelClient.ChannelException ex) {
-//                    throw new RuntimeException(ex);
-//                }
-//                catch(IOException ioe) {
-//                    throw new RuntimeException(ioe);
-//                }
+                disconnect();
+                start();
             }
+
         }, response.getSecondsUntilExpire() * 1000);
     }
 
     /**
      * Close the current channel connection
      */
-    public void close() {
+    public void disconnect() {
         try {
-            //ChannelClient oldClient = channelCleint;
-            MessageReceiver oldReceiver = receiver;
-            connect();
-            //oldClient.close();
-            oldReceiver.close();
+            if (receiver != null) {
+                receiver.close();
+            }
         }
         catch (MyRpcException e) {
             throw new RuntimeException(e);
         }
-//        if (channelCleint == null) {
-//            return;
-//        }
-//
-//        try {
-//            channelCleint.close();
-//        }
-//        catch (ChannelClient.ChannelException ex) {
-//            ex.printStackTrace();
-//        }
+        connected = false;
     }
 
     /**
@@ -226,10 +236,14 @@ public class MyRpc implements ChannelClient.ChannelListener, MessageHandler {
      * @throws in.myrpc.MyRpcException
      */
     public void call(String targetEndpointLocator, String method,
-            Map<String, String> arguments, RpcCallback callback)
+            Map<String, String> arguments, MyRpcCallback callback)
             throws MyRpcException {
 
         String requestId = Integer.toHexString(lastRequestId.incrementAndGet());
+
+        if (!waitForConnect()) {
+            throw new MyRpcException("Connection failed to open");
+        }
 
         RpcRequest rpc = new RpcRequest(requestId,
                 endpointLocator, targetEndpointLocator,
@@ -250,6 +264,7 @@ public class MyRpc implements ChannelClient.ChannelListener, MessageHandler {
      * @param originalSourceLocator
      * @param value
      * @param requestId
+     * @throws in.myrpc.MyRpcException
      */
     protected void returnCall(String originalSourceLocator, String value,
             String requestId) throws MyRpcException {
@@ -277,10 +292,11 @@ public class MyRpc implements ChannelClient.ChannelListener, MessageHandler {
         }
 
         try {
-
             byte[] contentBytes = mapper.writeValueAsBytes(content); //utf-8
+
             URL url = new URL(domain + uri);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            HttpURLConnection connection = (HttpURLConnection)
+                    url.openConnection();
 
             connection.setDoOutput(true);
             connection.setDoInput(true);
@@ -380,7 +396,7 @@ public class MyRpc implements ChannelClient.ChannelListener, MessageHandler {
     protected void onRpcReturnCall(RpcReturnRelay relay) {
         assert (relay != null);
 
-        RpcCallback callback = callbacks.get(relay.getRequestId());
+        MyRpcCallback callback = callbacks.get(relay.getRequestId());
 
         if (callback != null) {
             callback.onSuccss(relay.getReturnValue());
@@ -388,11 +404,38 @@ public class MyRpc implements ChannelClient.ChannelListener, MessageHandler {
     }
 
     /**
+     * block until myRpc connection is opened
+     * @return true if connected and false if interrupted
+     */
+    private boolean waitForConnect() {
+        if (connected) {
+            return true;
+        }
+
+        synchronized (this) {
+            while (!connected) {
+                try {
+                    this.wait(1000);
+                }
+                catch (InterruptedException ie) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * ******* Channel Callback methods after here ***********
      */
     @Override
     public void onOpen() {
-        System.out.println("Channel opened");
+        connected = true;
+
+        synchronized (this) {
+            this.notifyAll();
+        }
     }
 
     /**
@@ -424,32 +467,27 @@ public class MyRpc implements ChannelClient.ChannelListener, MessageHandler {
         System.out.println("Channel clonsed");
     }
 
+
     @Override
-    public void onError(int code, String description) {
-        System.out.println("Error " + code + " " + description);
-        try {
-                    //ChannelClient oldClient = channelCleint;
-                    MessageReceiver oldReceiver = receiver;
-                    connect();
-                    //oldClient.close();
-                    oldReceiver.close();
-                }
-                catch (MyRpcException e) {
-                    throw new RuntimeException(e);
-                }
-//        try {
-//            channelCleint.close();
-//        }
-//        catch (ChannelClient.ChannelException ex) {
-//            ex.printStackTrace();
-//        }
-//
-//        try {
-//            connect();
-//        }
-//        catch (IOException ex) {
-//            throw new RuntimeException(ex);
-//        }
+    public void onError(String message) {
+
+        disconnect();
+
+        MyRpcErrorEvent error = new MyRpcErrorEvent(message.toString());
+
+        if (errorHandler != null) {
+            errorHandler.onError(error);
+        }
+
+        if (error.doReconnect()) {
+            try {
+                Thread.sleep(5000);
+            }
+            catch (InterruptedException ex) {
+
+            }
+            start();
+        }
     }
 
 }

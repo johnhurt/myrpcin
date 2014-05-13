@@ -13,28 +13,9 @@ import java.util.regex.Pattern;
 /**
  * This class contains the state information about the script being used to
  * receive and process messages.
- *
- * Grammar
- * instructionLine := {assignment} | {functionCall};
- * assignment := {result} = {expression}
- * result := {variableName} {optionalResult}
- * optionalResult := nil | , {result}
- * expression := {expressionTerm} {optionalExpressionTerm}
- * optionalExpressionTerm := nil | + {expression}
- * expressionTerm := {functionCall} | {stringConstant} | {variableName}
- * variableName := [a-zA-Z_][a-zA-Z_0-9]*
- * stringConstant := \"^\".*\"
- * functionCall := {functionName} ({arguments})
- * functionName := GET | POST | random | regex
- * arguments := nil | {mandantoryArguments}
- * mandantoryArguments := {argument} {optionalArguments}
- * argument := {stringConstant} | {variableName}
- * optionalArguments := nil | , {mandantoryArguments}
- *
  * @author kguthrie
  */
 public class ScriptEnvironment implements Runnable {
-
     public static final int EOF = -1;
     public static final int VARIABLE_NAME = 0;
     public static final int QUOTED_STRING = 1;
@@ -54,6 +35,9 @@ public class ScriptEnvironment implements Runnable {
     public static final int LABEL = 15;
     public static final int GOTO = 16;
     public static final int DEC = 17;
+    public static final int ON_OPEN = 18;
+    public static final int ON_MESSAGE = 19;
+    public static final int ON_ERROR = 20;
 
     private final String fullScript;
     private final Map<String, String> variables;
@@ -65,7 +49,7 @@ public class ScriptEnvironment implements Runnable {
     private final Map<String, Integer> labels;
     private int currentEvaluationPointer;
     private String token;
-
+    private MessageHandler messageHandler;
     private boolean stopRequested;
 
     public ScriptEnvironment(String scriptBody) throws MyRpcException {
@@ -117,11 +101,6 @@ public class ScriptEnvironment implements Runnable {
      * @return the previous value of the variable or null if it didn't exist
      */
     public String setVariableValue(String variableName, String value) {
-
-        if (value != null && value.length() > 0) {
-            System.out.println(variableName + " => " + value + "\n");
-        }
-
         return variables.put(variableName, value);
     }
 
@@ -278,7 +257,10 @@ public class ScriptEnvironment implements Runnable {
             case INC:
             case IF:
             case GOTO:
-            case DEC: {
+            case DEC:
+            case ON_OPEN:
+            case ON_MESSAGE:
+            case ON_ERROR: {
                 buffer.setLength(0);
                 Operand arguments
                         = parseFunctionArguments(source, cursor, buffer);
@@ -441,6 +423,15 @@ public class ScriptEnvironment implements Runnable {
                 if ("dec".equalsIgnoreCase(value)) {
                     return DEC;
                 }
+                if ("onOpen".equalsIgnoreCase(value)) {
+                    return ON_OPEN;
+                }
+                if ("onMessage".equalsIgnoreCase(value)) {
+                    return ON_MESSAGE;
+                }
+                if ("onError".equalsIgnoreCase(value)) {
+                    return ON_ERROR;
+                }
 
                 return VARIABLE_NAME;
             }
@@ -506,18 +497,49 @@ public class ScriptEnvironment implements Runnable {
 
     /**
      * Evaluate the script in the current environment
-     * @throws MyRpcException
      */
-    public void evaluate() throws MyRpcException {
+    public void evaluate() {
+        try {
+            for (currentEvaluationPointer = 0;
+                    currentEvaluationPointer < instructions.length;
+                    currentEvaluationPointer++) {
+                if (stopRequested) {
+                    break;
+                }
 
-        for (currentEvaluationPointer = 0;
-                currentEvaluationPointer < instructions.length;
-                currentEvaluationPointer++) {
-            if (stopRequested) {
-                return;
+                instructions[currentEvaluationPointer].evaluate(this);
             }
 
-            instructions[currentEvaluationPointer].evaluate(this);
+            if (messageHandler != null) {
+                messageHandler.onClose();
+            }
+        }
+        catch (MyRpcException ex) {
+            StringBuilder errorMessage = new StringBuilder();
+
+            Throwable cause = ex;
+
+            while (cause != null) {
+                errorMessage.append(cause.getClass().getName());
+                errorMessage.append(": ");
+                errorMessage.append(cause.getMessage());
+                errorMessage.append("\n");
+
+                for (StackTraceElement e : cause.getStackTrace()) {
+                    errorMessage.append(e.toString());
+                    errorMessage.append("\n");
+                }
+
+                cause = cause.getCause();
+
+                if (cause != null) {
+                    errorMessage.append("\nCaused By:\n");
+                }
+            }
+
+            if (messageHandler != null) {
+                messageHandler.onError(errorMessage.toString());
+            }
         }
     }
 
@@ -529,13 +551,8 @@ public class ScriptEnvironment implements Runnable {
         client.reset();
         stopRequested = false;
 
-        try {
-            evaluate();
-        }
-        catch (MyRpcException ex) {
-            System.out.println("Error evaluting script: " + ex.getMessage());
-            ex.printStackTrace();
-        }
+        evaluate();
+
 
     }
 
@@ -912,5 +929,72 @@ public class ScriptEnvironment implements Runnable {
         currentEvaluationPointer = location;
 
         return new StringBuilder();
+    }
+
+    /**
+     * call the onOpen callback of the message handler
+     * @return
+     */
+    public StringBuilder onOpen() {
+        messageHandler.onOpen();
+        return new StringBuilder();
+    }
+
+    /**
+     * Call the onMessage callback of the message handler.  The only argument
+     * for this method should be the message string
+     * @param args
+     * @return
+     * @throws in.myrpc.MyRpcException
+     */
+    public StringBuilder onMessage(String[] args) throws MyRpcException {
+        if (args == null || args.length != 1) {
+            throw new MyRpcException("On Message expects a single argument");
+        }
+
+        if (messageHandler != null) {
+            messageHandler.onMessage(args[0]
+                    .replaceAll("\\\\\"", "\"")
+                    .replace("\\\\", "\\"));
+        }
+
+        return new StringBuilder();
+    }
+
+    /**
+     * Call the onError callback of the message handler.  The expected arguments
+     * for this method are:
+     *
+     * args[0] = String error code
+     * args[1] = string error message
+     *
+     * @param args
+     * @return
+     * @throws in.myrpc.MyRpcException
+     */
+    public StringBuilder onError(String[] args) throws MyRpcException {
+        if (args == null || args.length != 2) {
+            throw new MyRpcException("On error expects a 2 arguments");
+        }
+
+        if (messageHandler != null) {
+            messageHandler.onError("Error " + args[0] + ": " + args[1]);
+        }
+
+        return new StringBuilder();
+    }
+
+    /**
+     * @return the messageHandler
+     */
+    public MessageHandler getMessageHandler() {
+        return messageHandler;
+    }
+
+    /**
+     * @param messageHandler the messageHandler to set
+     */
+    public void setMessageHandler(MessageHandler messageHandler) {
+        this.messageHandler = messageHandler;
     }
 }

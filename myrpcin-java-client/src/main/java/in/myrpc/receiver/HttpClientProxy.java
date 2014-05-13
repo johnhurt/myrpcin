@@ -124,13 +124,6 @@ public class HttpClientProxy {
                 connection.getHeaderField("Content-Encoding");
 
         try {
-            Thread.sleep(150);
-        }
-        catch (Exception ex) {
-
-        }
-
-        try {
             result = new BufferedReader( new InputStreamReader(
                     (contentEncoding != null
                             && contentEncoding.contains("gzip"))
@@ -172,33 +165,121 @@ public class HttpClientProxy {
      * @return
      * @throws IOException
      */
-    private StringBuilder performHttpOperation(String url, String referer,
-            String content, int minBytes, int maxLines)
-                    throws IOException {
+    private StringBuilder performHttpOperation(final String url, String referer,
+            String content, int minBytes, int maxLines) throws IOException {
 
         BufferedReader reader = getStreamForUrl(url, referer, content);
 
         StringBuilder result = new StringBuilder();
 
-        boolean close = minBytes > 0
-                ? readBytesFromStream(reader, result, minBytes)
-                : readLinesFromStream(reader, result, maxLines);
+        boolean close = readWithTimeout(reader, minBytes,
+                maxLines, result, 30000);
 
         if (close) {
+            close(url);
+        }
+
+        return result;
+    }
+
+    /**
+     * Read the configured amount from the given reader, but throw an IO timeout
+     * exception if the configured amount is not consumed before the given
+     * interval expires
+     * @param stream
+     * @param timeoutInMillis
+     * @param minBytes
+     * @param result
+     * @param maxLines
+     * @return
+     * @throws java.io.IOException
+     */
+    protected boolean readWithTimeout(final BufferedReader stream,
+            final int minBytes, final int maxLines, final StringBuilder result,
+            long timeoutInMillis) throws IOException {
+
+        final boolean[] closePointer = { true };
+        final boolean[] donePointer = { false };
+        final Throwable[] exceptionResultPointer = { null };
+
+        // Because buffered readers on sockets cannot be easily interrupted
+        // or closed, we run the read operation in a different thread and
+        // monitor the timeout interval in the current thread.
+        new Thread(new Runnable() {
+
+            public void run() {
+
+                try {
+                    closePointer[0] = minBytes > 0
+                            ? readBytesFromStream(stream, result, minBytes)
+                            : readLinesFromStream(stream, result, maxLines);
+                }
+                catch (IOException ex) {
+                    exceptionResultPointer[0] = ex;
+                }
+                catch (RuntimeException rex) {
+                    exceptionResultPointer[0] = rex;
+                }
+
+                donePointer[0] = true;
+
+                synchronized (HttpClientProxy.this) {
+                    HttpClientProxy.this.notifyAll();
+                }
+            }
+
+        }).start();
+
+        long now;
+        long stop = System.currentTimeMillis() + timeoutInMillis;
+
+        synchronized (HttpClientProxy.this) {
+            while (!donePointer[0]
+                    && (now = System.currentTimeMillis()) < stop) {
+                try {
+
+                    long waitInterval = (stop - now) / 2;
+                    waitInterval = 1000 < waitInterval ? waitInterval : 1000;
+
+                    HttpClientProxy.this.wait(waitInterval);
+                }
+                catch (InterruptedException ie) {
+                    break;
+                }
+            }
+        }
+
+        if (!donePointer[0]) {
+            throw new IOException("Read timeout");
+        }
+        if (exceptionResultPointer[0] != null) {
+            throw new IOException("Read failed", exceptionResultPointer[0]);
+        }
+
+        return closePointer[0];
+    }
+
+    /**
+     * Closes any connections or readers open to the given url
+     * @param url
+     */
+    protected void close(String url) {
+        BufferedReader reader = openStreams.remove(url);
+
+        if (reader != null) {
             try {
                 reader.close();
             }
             catch(IOException ex) {
                 // disregaurd
             }
-            openStreams.remove(url);
-            HttpURLConnection connection = openConnections.remove(url);
-            if (connection != null) {
-                connection.disconnect();
-            }
         }
 
-        return result;
+        HttpURLConnection connection = openConnections.remove(url);
+
+        if (connection != null) {
+            connection.disconnect();
+        }
     }
 
     /**

@@ -13,6 +13,6 @@ public interface MessageHandler {
 
     void onMessage(String message);
 
-    void onError(int errorCode, String message);
+    void onError(String message);
 
 }
