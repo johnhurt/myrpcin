@@ -1,6 +1,7 @@
 package in.myrpc.receiver;
 
 import in.myrpc.MyRpcException;
+import in.myrpc.logging.MyRpcLogger;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -13,10 +14,15 @@ public class EvaluativeMessageReceiver extends MessageReceiver {
 
     private static ScriptEnvironment lastEnv = null;
 
+    private final MyRpcLogger logger;
+
     private ScriptEnvironment env;
 
-    public EvaluativeMessageReceiver(String token, MessageHandler handler) {
+
+    public EvaluativeMessageReceiver(String token, MessageHandler handler,
+            MyRpcLogger logger) {
         super(token, handler);
+        this.logger = logger;
     }
 
     private String getScriptContent() throws MyRpcException {
@@ -63,6 +69,8 @@ public class EvaluativeMessageReceiver extends MessageReceiver {
 
         env.setToken(token);
         env.setMessageHandler(handler);
+        env.setLogger(logger);
+        
         Thread t = new Thread(env);
 
         t.start();

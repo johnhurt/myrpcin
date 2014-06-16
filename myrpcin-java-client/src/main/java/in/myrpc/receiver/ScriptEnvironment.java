@@ -1,14 +1,14 @@
 package in.myrpc.receiver;
 
-import com.google.common.collect.Maps;
 import in.myrpc.MyRpcException;
+import in.myrpc.logging.MyRpcLogger;
+import in.myrpc.logging.MyRpcLoggingLevel;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * This class contains the state information about the script being used to
@@ -38,28 +38,56 @@ public class ScriptEnvironment implements Runnable {
     public static final int ON_OPEN = 18;
     public static final int ON_MESSAGE = 19;
     public static final int ON_ERROR = 20;
+    public static final int TRACE = 21;
+    public static final int DEBUG = 22;
+    public static final int INFO = 23;
+    public static final int WARN = 24;
+    public static final int ERROR = 25;
+    public static final int FATAL = 26;
+
+    private static final Map<String, Integer> keywordValueByName
+            = new HashMap<String, Integer>() {{
+                put("get".toLowerCase(), GET);
+                put("post".toLowerCase(), POST);
+                put("random".toLowerCase(), RANDOM);
+                put("regex".toLowerCase(), REGEX);
+                put("token".toLowerCase(), TOKEN);
+                put("inc".toLowerCase(), INC);
+                put("if".toLowerCase(), IF);
+                put("label".toLowerCase(), LABEL);
+                put("goto".toLowerCase(), GOTO);
+                put("dec".toLowerCase(), DEC);
+                put("onOpen".toLowerCase(), ON_OPEN);
+                put("onMessage".toLowerCase(), ON_MESSAGE);
+                put("onError".toLowerCase(), ON_ERROR);
+                put("trace".toLowerCase(), TRACE);
+                put("debug".toLowerCase(), DEBUG);
+                put("info".toLowerCase(), INFO);
+                put("warn".toLowerCase(), WARN);
+                put("error".toLowerCase(), ERROR);
+                put("fatal".toLowerCase(), FATAL);
+            }};
 
     private final String fullScript;
     private final Map<String, String> variables;
     private final Operation[] instructions;
     private final Random random;
-    private final Map<String, Pattern> regexCache;
-    private final Map<String, Matcher> matcherCache;
-    private final HttpClientProxy client;
+    private final HttpHandler httpHandler;
+    private final RegexHandler regexHandler;
     private final Map<String, Integer> labels;
     private int currentEvaluationPointer;
     private String token;
     private MessageHandler messageHandler;
     private boolean stopRequested;
+    private MyRpcLogger logger;
 
     public ScriptEnvironment(String scriptBody) throws MyRpcException {
         stopRequested = false;
-        variables = Maps.newHashMap();
-        regexCache = Maps.newHashMap();
-        matcherCache = Maps.newHashMap();
-        labels = Maps.newHashMap();
-        client = new HttpClientProxy();
-        this.fullScript = scriptBody;
+        variables = new HashMap<String, String>();
+        labels = new HashMap<String, Integer>();
+        httpHandler = new HttpHandler();
+        regexHandler = new RegexHandler();
+        fullScript = scriptBody;
         currentEvaluationPointer = 0;
 
         random = new Random(System.currentTimeMillis());
@@ -260,7 +288,13 @@ public class ScriptEnvironment implements Runnable {
             case DEC:
             case ON_OPEN:
             case ON_MESSAGE:
-            case ON_ERROR: {
+            case ON_ERROR:
+            case TRACE:
+            case DEBUG:
+            case INFO:
+            case WARN:
+            case ERROR:
+            case FATAL: {
                 buffer.setLength(0);
                 Operand arguments
                         = parseFunctionArguments(source, cursor, buffer);
@@ -393,44 +427,11 @@ public class ScriptEnvironment implements Runnable {
                 cursorLocation[0]--;
                 String value = target.toString();
 
-                if ("get".equalsIgnoreCase(value)) {
-                    return GET;
-                }
-                if ("post".equalsIgnoreCase(value)) {
-                    return POST;
-                }
-                if ("random".equalsIgnoreCase(value)) {
-                    return RANDOM;
-                }
-                if ("regex".equalsIgnoreCase(value)) {
-                    return REGEX;
-                }
-                if ("token".equalsIgnoreCase(value)) {
-                    return TOKEN;
-                }
-                if ("inc".equalsIgnoreCase(value)) {
-                    return INC;
-                }
-                if ("if".equalsIgnoreCase(value)) {
-                    return IF;
-                }
-                if ("label".equalsIgnoreCase(value)) {
-                    return LABEL;
-                }
-                if ("goto".equalsIgnoreCase(value)) {
-                    return GOTO;
-                }
-                if ("dec".equalsIgnoreCase(value)) {
-                    return DEC;
-                }
-                if ("onOpen".equalsIgnoreCase(value)) {
-                    return ON_OPEN;
-                }
-                if ("onMessage".equalsIgnoreCase(value)) {
-                    return ON_MESSAGE;
-                }
-                if ("onError".equalsIgnoreCase(value)) {
-                    return ON_ERROR;
+                Integer keywordNumber
+                        = keywordValueByName.get(value.toLowerCase());
+
+                if (keywordNumber != null) {
+                    return keywordNumber;
                 }
 
                 return VARIABLE_NAME;
@@ -515,30 +516,10 @@ public class ScriptEnvironment implements Runnable {
             }
         }
         catch (MyRpcException ex) {
-            StringBuilder errorMessage = new StringBuilder();
-
-            Throwable cause = ex;
-
-            while (cause != null) {
-                errorMessage.append(cause.getClass().getName());
-                errorMessage.append(": ");
-                errorMessage.append(cause.getMessage());
-                errorMessage.append("\n");
-
-                for (StackTraceElement e : cause.getStackTrace()) {
-                    errorMessage.append(e.toString());
-                    errorMessage.append("\n");
-                }
-
-                cause = cause.getCause();
-
-                if (cause != null) {
-                    errorMessage.append("\nCaused By:\n");
-                }
-            }
+            String errorMessage = MyRpcLogger.throwableToString(ex);
 
             if (messageHandler != null) {
-                messageHandler.onError(errorMessage.toString());
+                messageHandler.onError(errorMessage);
             }
         }
     }
@@ -548,7 +529,8 @@ public class ScriptEnvironment implements Runnable {
      */
     public void run() {
         variables.clear();
-        client.reset();
+        httpHandler.reset();
+        regexHandler.reset();
         stopRequested = false;
 
         evaluate();
@@ -677,40 +659,8 @@ public class ScriptEnvironment implements Runnable {
             return new StringBuilder();
         }
 
-        Matcher matcher = null;
-        String matcherKey = patternString + searchString;
-        if (stream) {
-            matcher = matcherCache.get(matcherKey);
-        }
-
-        if (matcher == null) {
-
-            Pattern pattern = regexCache.get(patternString);
-
-            if (pattern == null) {
-                pattern = Pattern.compile(patternString, Pattern.CASE_INSENSITIVE +
-                        Pattern.MULTILINE);
-
-                regexCache.put(patternString, pattern);
-            }
-
-            matcher = pattern.matcher(searchString);
-
-            if (stream) {
-                matcherCache.put(matcherKey, matcher);
-            }
-        }
-
-        String matchResult = null;
-
-        if (matcher.find()) {
-            matchResult = matcher.group(groupNumber);
-        }
-        else if (stream) {
-            matcherCache.remove(matcherKey);
-        }
-
-        return new StringBuilder(matchResult != null ? matchResult : "");
+        return regexHandler.handleRegex(patternString, searchString,
+                stream, groupNumber);
     }
 
     /**
@@ -751,7 +701,7 @@ public class ScriptEnvironment implements Runnable {
         }
 
         try {
-            return client.get(url, referer, minBytes, maxLines);
+            return httpHandler.get(url, referer, minBytes, maxLines);
         }
         catch (IOException e) {
             throw new MyRpcException("Get failed", e);
@@ -798,7 +748,7 @@ public class ScriptEnvironment implements Runnable {
         }
 
         try {
-            return client.post(url, referer, content,
+            return httpHandler.post(url, referer, content,
                     minBytes, maxLines);
         }
         catch (IOException e) {
@@ -985,6 +935,23 @@ public class ScriptEnvironment implements Runnable {
     }
 
     /**
+     * Log the given error message (args[0]) at the given level
+     * @param level
+     * @param args
+     * @return
+     * @throws in.myrpc.MyRpcException
+     */
+    public StringBuilder log(MyRpcLoggingLevel level, String[] args)
+            throws MyRpcException {
+        if (args == null || args.length != 1) {
+            throw new MyRpcException("log methods expect a message argument");
+        }
+
+        logger.logMessage(level, args[0]);
+        return new StringBuilder();
+    }
+
+    /**
      * @return the messageHandler
      */
     public MessageHandler getMessageHandler() {
@@ -996,5 +963,19 @@ public class ScriptEnvironment implements Runnable {
      */
     public void setMessageHandler(MessageHandler messageHandler) {
         this.messageHandler = messageHandler;
+    }
+
+    /**
+     * @return the logger
+     */
+    public MyRpcLogger getLogger() {
+        return logger;
+    }
+
+    /**
+     * @param logger the logger to set
+     */
+    public void setLogger(MyRpcLogger logger) {
+        this.logger = logger;
     }
 }

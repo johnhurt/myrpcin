@@ -1,11 +1,13 @@
 package in.myrpc;
 
-import com.google.common.collect.ImmutableMap;
+import in.myrpc.logging.MyRpcLoggingCallback;
+import in.myrpc.logging.MyRpcLoggingLevel;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
+import java.util.HashMap;
 
 public class App implements Runnable, MyRpcErrorHandler {
 
@@ -33,6 +35,13 @@ public class App implements Runnable, MyRpcErrorHandler {
             config.save();
         }
 
+        myRpc.addLoggingCallback(new MyRpcLoggingCallback() {
+
+            public void onLog(MyRpcLoggingLevel level, String message) {
+                System.out.println(level.toString() + " " + message + "\n");
+            }
+        });
+
         myRpc.start();
     }
 
@@ -59,9 +68,10 @@ public class App implements Runnable, MyRpcErrorHandler {
 
             while ((message = in.readLine()) != null) {
                 final long start = System.currentTimeMillis();
-
+                final String finalMessage = message;
                 myRpc.call(target, "onMessage",
-                        ImmutableMap.of("message", message),
+                        new HashMap<String, String>()
+                                {{put("message", finalMessage);}},
                         new MyRpcCallback() {
 
                             public void onSuccss(String result) {

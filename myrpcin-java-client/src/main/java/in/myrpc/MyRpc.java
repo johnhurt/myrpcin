@@ -1,7 +1,8 @@
 package in.myrpc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.collect.Maps;
+import in.myrpc.logging.MyRpcLogger;
+import in.myrpc.logging.MyRpcLoggingCallback;
 import in.myrpc.model.ConnectRequest;
 import in.myrpc.model.ConnectResponse;
 import in.myrpc.model.ProvisionRequest;
@@ -18,14 +19,13 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -51,6 +51,7 @@ public class MyRpc implements MessageHandler {
     private final String domain;
     private final Map<String, MyRpcCallback> callbacks;
     private final MyRpcErrorHandler errorHandler;
+    private final MyRpcLogger logger;
 
     private String endpointLocator;
     private MessageReceiver receiver;
@@ -65,10 +66,11 @@ public class MyRpc implements MessageHandler {
         this.mapper = new ObjectMapper();
         this.endpointLocator = endpointLocator;
         this.interop = new RpcMethodReflection(rpcMethodContainer);
-        this.callbacks = Maps.newHashMap();
+        this.callbacks = new HashMap<String, MyRpcCallback>();
         this.domain = local ? localApp : productionApp;
         this.connected = false;
         this.errorHandler = errorHandler;
+        this.logger = new MyRpcLogger();
 
         // :(
         ignoreUntrustedCertificateErrors();
@@ -77,6 +79,7 @@ public class MyRpc implements MessageHandler {
         // exists
         Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
             public void run() {
+                logger.trace("Calling disconnect on runtime shutdown");
                 disconnect();
             }
         }));
@@ -145,33 +148,15 @@ public class MyRpc implements MessageHandler {
                     connect();
                 }
                 catch (MyRpcException ex) {
-                    StringBuilder errorMessage = new StringBuilder();
-
-                    Throwable cause = ex;
-
-                    while (cause != null) {
-                        errorMessage.append(cause.getClass().getName());
-                        errorMessage.append(": ");
-                        errorMessage.append(cause.getMessage());
-                        errorMessage.append("\n");
-
-                        for (StackTraceElement e : cause.getStackTrace()) {
-                            errorMessage.append(e.toString());
-                            errorMessage.append("\n");
-                        }
-
-                        cause = cause.getCause();
-
-                        if (cause != null) {
-                            errorMessage.append("\nCaused By:\n");
-                        }
-                    }
-                    onError(errorMessage.toString());
+                    onError("Error opening connection\n\n"
+                            + MyRpcLogger.throwableToString(ex));
                 }
             }
-        },  "MyRpcConnectThread");
+        });
 
         t.start();
+
+        logger.trace("Started MyRpc connection thread: " + t.getId());
     }
 
     /**
@@ -182,13 +167,15 @@ public class MyRpc implements MessageHandler {
      */
     protected void connect() throws MyRpcException {
 
+        logger.debug("Connecting to MyRpc service at " + domain);
+
         ConnectRequest request = new ConnectRequest(endpointLocator);
         ConnectResponse response = post("/r/connect", request,
                 ConnectResponse.class);
 
         String token = response.getChannelToken();
 
-        receiver = new EvaluativeMessageReceiver(token, this);
+        receiver = new EvaluativeMessageReceiver(token, this, logger);
         receiver.open();
 
         // If the cahnnel was opened successfully, then set a timer to reconnect
@@ -203,24 +190,29 @@ public class MyRpc implements MessageHandler {
 
             @Override
             public void run() {
+                logger.debug("Starting scheduled disconnect process");
                 disconnect();
                 start();
             }
 
         }, response.getSecondsUntilExpire() * 1000);
+
+        logger.debug("Channel will expire in "
+                + response.getSecondsUntilExpire());
     }
 
     /**
      * Close the current channel connection
      */
     public void disconnect() {
+        logger.debug("Disconnecting from MyRpcService at " + domain);
         try {
             if (receiver != null) {
                 receiver.close();
             }
         }
         catch (MyRpcException e) {
-            throw new RuntimeException(e);
+            logger.warn("Error while disconnecting", e);
         }
         connected = false;
     }
@@ -240,6 +232,9 @@ public class MyRpc implements MessageHandler {
             throws MyRpcException {
 
         String requestId = Integer.toHexString(lastRequestId.incrementAndGet());
+
+        logger.trace("Starting request-" + requestId
+                + ".  Calling method: " + method);
 
         if (!waitForConnect()) {
             throw new MyRpcException("Connection failed to open");
@@ -268,6 +263,8 @@ public class MyRpc implements MessageHandler {
      */
     protected void returnCall(String originalSourceLocator, String value,
             String requestId) throws MyRpcException {
+
+        logger.trace("Returning response for request-" + requestId);
 
         RpcReturn result = new RpcReturn(requestId, value,
                 originalSourceLocator, endpointLocator);
@@ -353,30 +350,7 @@ public class MyRpc implements MessageHandler {
             result = interop.call(relay.getMethod(), relay.getArguments());
         }
         catch (Exception ex) {
-            StringWriter sw = new StringWriter();
-            PrintWriter pw = new PrintWriter(sw);
-
-            Throwable prev = null;
-            Throwable curr = ex;
-
-            while (curr != null) {
-
-                if (prev != null) {
-                    pw.println();
-                    pw.println("Caused By");
-                }
-
-                pw.print(ex.getClass().getName());
-                pw.print(": ");
-                pw.println(ex.getMessage());
-                ex.printStackTrace(pw);
-
-                prev = curr;
-                curr = ex.getCause();
-            }
-
-            pw.close();
-            result = sw.toString();
+            result = MyRpcLogger.throwableToString(ex);
         }
 
         try {
@@ -413,6 +387,9 @@ public class MyRpc implements MessageHandler {
         }
 
         synchronized (this) {
+
+            logger.trace("Waiting for connection to MyRpc");
+
             while (!connected) {
                 try {
                     this.wait(1000);
@@ -427,7 +404,25 @@ public class MyRpc implements MessageHandler {
     }
 
     /**
-     * ******* Channel Callback methods after here ***********
+     * Add the given logging callback to the myRpc logger
+     * @param callback
+     */
+    public void addLoggingCallback(MyRpcLoggingCallback callback) {
+        logger.addCallback(callback);
+    }
+
+    /**
+     * Remove the given callback from the list of callbacks and return
+     * whether the callback was in the list to be removed in the first place
+     * @param callback
+     * @return
+     */
+    public boolean removeLoggingCallback(MyRpcLoggingCallback callback) {
+        return logger.removeCallback(callback);
+    }
+
+    /**
+     * ******* Message Handler Callback methods after here ***********
      */
     @Override
     public void onOpen() {

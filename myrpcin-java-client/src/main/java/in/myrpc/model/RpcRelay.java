@@ -7,7 +7,6 @@
 package in.myrpc.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.collect.ImmutableMap;
 import java.util.Map;
 
 /**
@@ -28,7 +27,7 @@ public class RpcRelay {
             @JsonProperty("originLocator") String originLocator,
             @JsonProperty("requestId") String requestId) {
         this.method = method;
-        this.arguments = ImmutableMap.copyOf(arguments);
+        this.arguments = arguments;
         this.originLocator = originLocator;
         this.requestId = requestId;
     }

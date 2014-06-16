@@ -6,11 +6,11 @@
 
 package in.myrpc.reflect;
 
-import com.google.common.collect.Maps;
 import in.myrpc.annotation.RpcParam;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -29,8 +29,9 @@ public class RpcMethodReflection {
     public RpcMethodReflection(Object rpcMethodContainerInstance) {
         assert (rpcMethodContainerInstance != null);
 
-        this.methodsByName = Maps.newHashMap();
-        this.methodArgumentOrderByName = Maps.newHashMap();
+        this.methodsByName = new HashMap<String, Method>();
+        this.methodArgumentOrderByName
+                = new HashMap<String, Map<String, Integer>>();
         this.rpcMethodContainerInstance = rpcMethodContainerInstance;
         this.rpcMethodContainerClass = rpcMethodContainerInstance.getClass();
 
@@ -54,7 +55,8 @@ public class RpcMethodReflection {
                 assert (String.class == parameterType.getClass());
             }
 
-            Map<String, Integer> paramNameToIndex = Maps.newHashMap();
+            Map<String, Integer> paramNameToIndex
+                    = new HashMap<String, Integer>();
             methodArgumentOrderByName.put(method.getName(), paramNameToIndex);
 
             Annotation[][] annotations = method.getParameterAnnotations();

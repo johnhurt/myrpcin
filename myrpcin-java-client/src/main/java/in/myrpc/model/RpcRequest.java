@@ -2,7 +2,6 @@ package in.myrpc.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.collect.ImmutableMap;
 import java.util.Map;
 
 /**
@@ -27,7 +26,7 @@ public class RpcRequest {
             @JsonProperty("arguments") Map<String, String> arguments) {
         this.requestId = requestId;
         this.method = method;
-        this.arguments = ImmutableMap.copyOf(arguments);
+        this.arguments = arguments;
         this.sourceLocator = sourceLocator;
         this.targetLocator = targetLocator;
     }

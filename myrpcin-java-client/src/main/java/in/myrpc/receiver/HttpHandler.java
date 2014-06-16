@@ -15,7 +15,7 @@ import java.util.zip.GZIPInputStream;
  * it to act like a browser and perform get and post operations
  * @author kguthrie
  */
-public class HttpClientProxy {
+public class HttpHandler {
 
     private static final String acceptValue =
             "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
@@ -33,7 +33,7 @@ public class HttpClientProxy {
     private final Map<String, BufferedReader> openStreams;
     private final Map<String, HttpURLConnection> openConnections;
 
-    public HttpClientProxy() {
+    public HttpHandler() {
         cookies = new HashMap<String, String>();
         openStreams = new HashMap<String, BufferedReader>();
         openConnections = new HashMap<String, HttpURLConnection>();
@@ -173,7 +173,7 @@ public class HttpClientProxy {
         StringBuilder result = new StringBuilder();
 
         boolean close = readWithTimeout(reader, minBytes,
-                maxLines, result, 30000);
+                maxLines, result, 45000);
 
         if (close) {
             close(url);
@@ -223,8 +223,8 @@ public class HttpClientProxy {
 
                 donePointer[0] = true;
 
-                synchronized (HttpClientProxy.this) {
-                    HttpClientProxy.this.notifyAll();
+                synchronized (HttpHandler.this) {
+                    HttpHandler.this.notifyAll();
                 }
             }
 
@@ -233,7 +233,7 @@ public class HttpClientProxy {
         long now;
         long stop = System.currentTimeMillis() + timeoutInMillis;
 
-        synchronized (HttpClientProxy.this) {
+        synchronized (this) {
             while (!donePointer[0]
                     && (now = System.currentTimeMillis()) < stop) {
                 try {
@@ -241,7 +241,7 @@ public class HttpClientProxy {
                     long waitInterval = (stop - now) / 2;
                     waitInterval = 1000 < waitInterval ? waitInterval : 1000;
 
-                    HttpClientProxy.this.wait(waitInterval);
+                    this.wait(waitInterval);
                 }
                 catch (InterruptedException ie) {
                     break;
@@ -377,13 +377,20 @@ public class HttpClientProxy {
      * reset this http client
      */
     public void reset() {
-        for (BufferedReader con : openStreams.values()) {
-            try {
-                con.close();
-            }
-            catch(IOException ex) {
-                //Disregard
-            }
+        for (final BufferedReader con : openStreams.values()) {
+            // This close call can apparently hang, so perform it on a separate
+            // thread
+            new Thread(new Runnable() {
+
+                public void run() {
+                    try {
+                        con.close();
+                    }
+                    catch(IOException ex) {
+                        //Disregard
+                    }
+                }
+            }).start();
         }
 
         for (HttpURLConnection connection : openConnections.values()) {

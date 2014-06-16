@@ -1,6 +1,7 @@
 package in.myrpc.receiver;
 
 import in.myrpc.MyRpcException;
+import in.myrpc.logging.MyRpcLoggingLevel;
 
 /**
  * Representation of an programmatic operation of an operator on two operands
@@ -168,6 +169,24 @@ public class Operation {
             }
             case ScriptEnvironment.ON_ERROR: {
                 return env.onError(arguments);
+            }
+            case ScriptEnvironment.TRACE: {
+                return env.log(MyRpcLoggingLevel.trace, arguments);
+            }
+            case ScriptEnvironment.DEBUG: {
+                return env.log(MyRpcLoggingLevel.debug, arguments);
+            }
+            case ScriptEnvironment.INFO: {
+                return env.log(MyRpcLoggingLevel.info, arguments);
+            }
+            case ScriptEnvironment.WARN: {
+                return env.log(MyRpcLoggingLevel.warn, arguments);
+            }
+            case ScriptEnvironment.ERROR: {
+                return env.log(MyRpcLoggingLevel.error, arguments);
+            }
+            case ScriptEnvironment.FATAL: {
+                return env.log(MyRpcLoggingLevel.fatal, arguments);
             }
         }
 
